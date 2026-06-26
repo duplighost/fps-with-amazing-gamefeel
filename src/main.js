@@ -18,6 +18,8 @@ const MAX_HEALTH = 100;
 const REGEN_DELAY = 5;
 const REGEN_RATE = 14;     // hp / sec
 const HIT_INVULN = 0.35;
+const BEST_KEY = 'neonbreach.best';
+const SLOWMO_KEY = 'neonbreach.slowmo';
 
 class Game {
   constructor() {
@@ -71,14 +73,25 @@ class Game {
     this.runStart = 0;
     this.last = performance.now();
 
+    this.best = this._loadBest();
+    this.slowmoEnabled = localStorage.getItem(SLOWMO_KEY) !== 'off';
+
     this._wireCallbacks();
     this.hud.setHealth(this.health, MAX_HEALTH);
     this.hud.showStart();
+    this.hud.setBest(this.best);
+    if (this.input.isTouch) this.hud.enableTouchUI();
 
     window.addEventListener('resize', () => this.onResize());
     this.onResize();
     requestAnimationFrame((t) => this.loop(t));
   }
+
+  _loadBest() {
+    try { return JSON.parse(localStorage.getItem(BEST_KEY)) || { score: 0, wave: 0, kills: 0 }; }
+    catch (e) { return { score: 0, wave: 0, kills: 0 }; }
+  }
+  _saveBest() { try { localStorage.setItem(BEST_KEY, JSON.stringify(this.best)); } catch (e) {} }
 
   _wireCallbacks() {
     this.weapons.onAmmoChange = (a) => this.hud.setAmmo(a);
@@ -118,9 +131,50 @@ class Game {
     this.hud.el.playBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       this.audio.resume();
-      this.input.requestLock();
+      if (this.input.isTouch) {
+        // no pointer lock on mobile — drive the state machine directly
+        if (this.state === 'menu' || this.state === 'dead') this.startRun();
+        else if (this.state === 'paused') this.state = 'playing';
+        this.hud.hideOverlay();
+      } else {
+        this.input.requestLock();
+      }
     });
     this.hud.el.playBtn.addEventListener('mouseenter', () => this.audio.ready && this.audio.uiHover());
+
+    // touch action buttons
+    if (this.input.isTouch) this._wireTouchButtons();
+
+    // 'T' toggles the kill-time slow-mo (persisted)
+    window.addEventListener('keydown', (e) => {
+      if (e.code !== 'KeyT') return;
+      this.slowmoEnabled = !this.slowmoEnabled;
+      localStorage.setItem(SLOWMO_KEY, this.slowmoEnabled ? 'on' : 'off');
+      this.hud.banner(this.slowmoEnabled ? 'TIME-WARP ON' : 'TIME-WARP OFF', '', '#b78bff');
+    });
+  }
+
+  _wireTouchButtons() {
+    const hud = this.hud.el;
+    const hold = (el, action) => {
+      el.addEventListener('touchstart', (e) => { e.preventDefault(); el.classList.add('active'); this.input.setHeld(action, true); }, { passive: false });
+      const up = (e) => { e.preventDefault(); el.classList.remove('active'); this.input.setHeld(action, false); };
+      el.addEventListener('touchend', up);
+      el.addEventListener('touchcancel', up);
+    };
+    hold(hud.touchFire, 'fire');
+    hold(hud.touchJump, 'jump');
+    hud.touchReload.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      hud.touchReload.classList.add('active');
+      this.input.setHeld('reload', true);
+      this.input.setHeld('reload', false); // a tap = one press
+    }, { passive: false });
+    hud.touchReload.addEventListener('touchend', () => hud.touchReload.classList.remove('active'));
+    hud.touchPause.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      if (this.state === 'playing') { this.state = 'paused'; this.hud.showPause(); }
+    }, { passive: false });
   }
 
   startRun() {
@@ -131,6 +185,7 @@ class Game {
     this.enemies.reset();
     this.fx.trauma = 0;
     this.fx.hitstop = 0;
+    this.fx.slowmo = 1;
     this.health = MAX_HEALTH;
     this.invuln = 0;
     this.lastDamage = this.time;
@@ -165,12 +220,11 @@ class Game {
     const secs = Math.max(0, Math.floor(this.time - this.runStart));
     const mm = String((secs / 60) | 0).padStart(2, '0');
     const ss = String(secs % 60).padStart(2, '0');
-    this.hud.showGameOver({
-      score: this.enemies.score,
-      wave: this.enemies.wave,
-      kills: this.enemies.kills,
-      time: `${mm}:${ss}`,
-    });
+    const score = this.enemies.score, wave = this.enemies.wave, kills = this.enemies.kills;
+    const newBest = score > this.best.score;
+    if (newBest) { this.best = { score, wave, kills }; this._saveBest(); }
+    this.hud.setBest(this.best);
+    this.hud.showGameOver({ score, wave, kills, time: `${mm}:${ss}`, best: this.best.score, newBest });
   }
 
   // Raycast against world + enemies, return nearest hit.
@@ -198,6 +252,13 @@ class Game {
     if (killed) this.fx.addHitstop(0.075);
     else if (isHead) this.fx.addHitstop(0.04);
     if (isHead && !killed) this.audio.headshot();
+
+    // Slow-mo flourish on kills (toggle with 'T'): a little weight on every
+    // kill, a beat on head-kills, and a cinematic dip when a wave is cleared.
+    if (killed && this.slowmoEnabled) {
+      const cleared = this.enemies.aliveCount() === 0 && this.enemies.spawnQueue.length === 0;
+      this.fx.addSlowmo(cleared ? 0.28 : isHead ? 0.45 : 0.7);
+    }
   }
 
   onResize() {
@@ -249,6 +310,10 @@ class Game {
 
     this.fx.update(realDt);
     this.hud.update(realDt, this.camera);
+    if (this.input.isTouch) {
+      this.hud.renderTouchStick(this.input.moveStick);
+      this.hud.el.touchControls.style.display = this.state === 'playing' ? '' : 'none';
+    }
     this.input.endFrame();
   }
 

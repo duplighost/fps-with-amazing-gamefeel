@@ -192,3 +192,42 @@ body { font-family: var(--font); color: #fff; user-select: none; -webkit-user-se
 .result span { font-family: var(--mono); font-size: 40px; font-weight: 900; color: var(--cyan); }
 .result > div { font-size: 12px; letter-spacing: 3px; opacity: 0.6; }
 .result > div span { letter-spacing: 0; }
+
+/* best score + new-best */
+#best-line { margin-top: 12px; font-family: var(--mono); font-size: 14px; letter-spacing: 2px; color: var(--amber); opacity: 0.85; }
+.newbest { font-weight: 900; letter-spacing: 4px; color: var(--amber); font-size: 22px; text-shadow: 0 0 18px rgba(255, 194, 74, 0.8); animation: combopop 0.9s ease-out; }
+.prevbest { font-family: var(--mono); font-size: 13px; letter-spacing: 2px; opacity: 0.5; }
+
+/* ---------- touch controls (mobile) ---------- */
+#touch-controls { display: none; }
+#hud.touch-mode #touch-controls { display: block; }
+#move-stick {
+  position: absolute; left: 0; top: 0; width: 130px; height: 130px; margin: -65px 0 0 -65px;
+  border-radius: 50%; border: 2px solid rgba(125, 249, 255, 0.35);
+  background: radial-gradient(circle, rgba(125, 249, 255, 0.08), transparent 70%);
+  opacity: 0; pointer-events: none; transition: opacity 0.1s;
+}
+#move-knob {
+  position: absolute; left: 50%; top: 50%; width: 56px; height: 56px; margin: -28px 0 0 -28px;
+  border-radius: 50%; background: rgba(125, 249, 255, 0.3); border: 2px solid rgba(125, 249, 255, 0.7);
+  box-shadow: 0 0 16px rgba(125, 249, 255, 0.5);
+}
+.tbtn {
+  position: absolute; pointer-events: auto; -webkit-tap-highlight-color: transparent; touch-action: none;
+  font-family: var(--font); font-weight: 800; letter-spacing: 1px; color: #eafcff;
+  background: rgba(10, 16, 24, 0.4); border: 2px solid rgba(125, 249, 255, 0.45);
+  border-radius: 50%; backdrop-filter: blur(2px); user-select: none;
+}
+.tbtn.active { background: rgba(125, 249, 255, 0.3); transform: scale(0.94); }
+#touch-fire { right: 30px; bottom: 34px; width: 96px; height: 96px; font-size: 16px; border-color: rgba(255, 58, 107, 0.6); }
+#touch-fire.active { background: rgba(255, 58, 107, 0.35); }
+#touch-jump { right: 140px; bottom: 40px; width: 72px; height: 72px; font-size: 13px; }
+#touch-reload { right: 46px; bottom: 142px; width: 66px; height: 66px; font-size: 13px; }
+#touch-pause { right: 18px; top: 16px; width: 48px; height: 48px; font-size: 14px; }
+
+/* keep the ammo readout clear of the fire/jump/reload buttons on mobile */
+#hud.touch-mode #hud-bottom-right { bottom: 224px; right: 22px; }
+#hud.touch-mode #ammo-mag { font-size: 40px; }
+#hud.touch-mode #ammo-sep, #hud.touch-mode #ammo-reserve { font-size: 22px; }
+#hud.touch-mode #hud-bottom-left { bottom: 20px; left: 20px; }
+#hud.touch-mode #health-bar { width: 150px; }

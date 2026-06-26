@@ -65,17 +65,26 @@ export class HUD {
       <div id="banner"><div id="banner-main"></div><div id="banner-sub"></div></div>
       <div id="low-ammo">RELOAD</div>
 
+      <div id="touch-controls">
+        <div id="move-stick"><div id="move-knob"></div></div>
+        <button id="touch-fire" class="tbtn">FIRE</button>
+        <button id="touch-jump" class="tbtn small">JUMP</button>
+        <button id="touch-reload" class="tbtn small">RLD</button>
+        <button id="touch-pause" class="tbtn pause">❚❚</button>
+      </div>
+
       <div id="overlay" class="show">
         <div id="overlay-card">
           <h1 id="game-title">NEON <span>BREACH</span></h1>
           <p id="game-tag">an FPS about amazing game feel</p>
+          <div id="best-line"></div>
           <div id="overlay-body"></div>
           <button id="play-btn">CLICK TO PLAY</button>
           <div id="controls">
             <div><b>WASD</b> move</div><div><b>SPACE</b> jump</div>
             <div><b>SHIFT</b> sprint</div><div><b>CTRL</b> crouch / slide</div>
             <div><b>MOUSE</b> look · <b>L-CLICK</b> fire</div><div><b>R</b> reload</div>
-            <div><b>1 2 3 / WHEEL</b> weapons</div><div><b>ESC</b> pause</div>
+            <div><b>1 2 3 / WHEEL</b> weapons</div><div><b>ESC</b> pause · <b>T</b> slow-mo</div>
           </div>
         </div>
       </div>`;
@@ -111,7 +120,40 @@ export class HUD {
       popupLayer: q('#popup-layer'),
       combo: q('#combo'),
       comboNum: q('#combo-num'),
+      bestLine: q('#best-line'),
+      touchControls: q('#touch-controls'),
+      moveStick: q('#move-stick'),
+      moveKnob: q('#move-knob'),
+      touchFire: q('#touch-fire'),
+      touchJump: q('#touch-jump'),
+      touchReload: q('#touch-reload'),
+      touchPause: q('#touch-pause'),
     };
+  }
+
+  // Reveal the on-screen touch controls (mobile).
+  enableTouchUI() { this.root.classList.add('touch-mode'); }
+
+  setBest(best) {
+    if (best && best.score > 0) {
+      this.el.bestLine.textContent = `BEST  ${best.score.toLocaleString()}  ·  WAVE ${best.wave}`;
+      this.el.bestLine.style.display = '';
+    } else {
+      this.el.bestLine.style.display = 'none';
+    }
+  }
+
+  // Position the floating move-stick visual from the input's stick state.
+  renderTouchStick(stick) {
+    if (!stick.active) { this.el.moveStick.style.opacity = '0'; return; }
+    const max = 58;
+    let dx = stick.x - stick.ox, dy = stick.y - stick.oy;
+    const len = Math.hypot(dx, dy);
+    if (len > max) { dx = dx / len * max; dy = dy / len * max; }
+    this.el.moveStick.style.opacity = '1';
+    this.el.moveStick.style.left = stick.ox + 'px';
+    this.el.moveStick.style.top = stick.oy + 'px';
+    this.el.moveKnob.style.transform = `translate(${dx}px, ${dy}px)`;
   }
 
   // --- readouts ----------------------------------------------------------
@@ -245,7 +287,11 @@ export class HUD {
   showGameOver(stats) {
     this.el.title.innerHTML = 'YOU DIED';
     this.el.tag.textContent = '';
+    const newBest = stats.newBest
+      ? `<div class="newbest">★ NEW BEST ★</div>`
+      : (stats.best ? `<div class="prevbest">best ${stats.best.toLocaleString()}</div>` : '');
     this.el.overlayBody.innerHTML = `
+      ${newBest}
       <div class="result">
         <div><span>${stats.score.toLocaleString()}</span>SCORE</div>
         <div><span>${stats.wave}</span>WAVES</div>

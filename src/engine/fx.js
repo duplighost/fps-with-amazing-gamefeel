@@ -3,7 +3,7 @@
 // and muzzle-flash lights. Everything is pooled so combat never allocates.
 
 import * as THREE from 'three';
-import { clamp, clamp01, rand, randSign } from './math.js';
+import { clamp, clamp01, damp, rand, randSign } from './math.js';
 
 // module-level scratch so the per-particle emitters never allocate in combat
 const _scratch = new THREE.Vector3();
@@ -160,6 +160,7 @@ export class FX {
     this.maxTrauma = 1;
     this.shakeTime = 0;
     this.hitstop = 0;
+    this.slowmo = 1;          // 1 = normal; <1 dilates world time (kill flourish)
     this._seed = [rand(0, 100), rand(0, 100), rand(0, 100)];
 
     const circle = softCircleTexture();
@@ -208,15 +209,18 @@ export class FX {
 
   addTrauma(amount) { this.trauma = clamp01(this.trauma + amount); }
   addHitstop(seconds) { this.hitstop = Math.max(this.hitstop, seconds); }
+  // Dip world time to `target` (0..1); it eases back to 1 in update().
+  addSlowmo(target) { this.slowmo = Math.min(this.slowmo, target); }
 
-  // Returns the scaled dt the rest of the sim should use (0 during hitstop),
-  // while FX itself always advances on real dt so flashes still animate.
+  // Returns the scaled dt the rest of the sim should use: 0 during a hit-stop
+  // freeze, otherwise the current slow-mo factor. FX itself always advances on
+  // real dt so flashes/shake keep animating regardless.
   consumeTimeScale(realDt) {
     if (this.hitstop > 0) {
       this.hitstop -= realDt;
       return 0;
     }
-    return 1;
+    return this.slowmo;
   }
 
   // --- emitters ----------------------------------------------------------
@@ -374,8 +378,9 @@ export class FX {
       }
     }
 
-    // decay trauma
+    // decay trauma + ease slow-mo back to normal
     this.trauma = clamp01(this.trauma - realDt * 1.6);
+    this.slowmo = damp(this.slowmo, 1, 5.5, realDt);
     this.shakeTime += realDt;
   }
 

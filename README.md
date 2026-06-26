@@ -32,9 +32,14 @@ Then open **http://localhost:8080** and click **PLAY** (this grabs your mouse).
 | **Ctrl / C** | crouch · **sprint + crouch** = slide |
 | **R** | reload |
 | **1 / 2 / 3 / wheel** | switch weapons |
+| **T** | toggle kill slow-mo |
 | **Esc** | pause |
 
+**On mobile** it auto-switches to touch controls: a floating left-stick to move,
+drag the right side to look, and on-screen **FIRE / JUMP / RLD / pause** buttons.
+
 Survive escalating waves of enemies. Score points, chain kills, don't die.
+Your best run is saved locally and shown on the menu.
 
 ## What makes it *feel* good
 
@@ -51,10 +56,11 @@ Game feel is the sum of a hundred small responses. The big ones here:
   grows while spraying and recovers when controlled, viewmodel rendered in a
   separate overlay pass so it **never clips into walls**, muzzle flash, tracers,
   brass, and per-weapon recoil.
-- **Impact** — **hit-stop** (a few ms of time-freeze on every hit), trauma-based
-  screen shake, hit markers (with head-shot + kill variants), white enemy
-  hit-flash, knockback, blood spray, floating damage numbers, and a meaty death
-  pop + particle burst.
+- **Impact** — **hit-stop** (a few ms of time-freeze on impactful hits),
+  **slow-mo on kills** (a brief time-dilation flourish, deeper on head-kills and
+  wave-clears — toggle with **T**), trauma-based screen shake, hit markers (with
+  head-shot + kill variants), white enemy hit-flash, knockback, blood spray,
+  floating damage numbers, and a meaty death pop + particle burst.
 - **Enemies** — two archetypes (melee *Grunt*, ranged *Shooter*) that telegraph
   attacks, steer around cover, and separate from each other.
 - **Audio** — every sound is **synthesized procedurally** with the Web Audio API
@@ -62,6 +68,8 @@ Game feel is the sum of a hundred small responses. The big ones here:
   an evolving ambient music bed.
 - **Juice** — dynamic crosshair, damage vignette with a directional hit
   indicator, low-health pulse, combo counter, wave banners, and kill popups.
+- **Reach** — plays on desktop (pointer-lock) *and* mobile (auto on-screen
+  dual-stick + FIRE/JUMP/RLD buttons); your best run persists in `localStorage`.
 
 ## Project layout
 
