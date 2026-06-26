@@ -31,10 +31,21 @@ const SLIDE_FRICTION = 2.2;
 const SLIDE_MIN_SPEED = 7.5;
 const SLIDE_TIME = 0.85;
 
+// --- grind rails ---
+const GRIND_TARGET = 19;       // base grind speed (m/s) — well above run/sprint
+const GRIND_BOOST = 27;        // brief boost right after latching
+const GRIND_MIN = 13;
+const GRIND_JUMP = 7.0;        // upward pop when jumping off a rail
+const GRIND_LATCH_HORIZ = 1.9; // horizontal magnet radius
+const GRIND_CD = 0.32;         // re-latch lockout after leaving a rail
+
+const _tmpV = new THREE.Vector3();
+
 export class Controller {
-  constructor(colliders, bounds) {
+  constructor(colliders, bounds, rails = null) {
     this.colliders = colliders;   // [{min:Vec3, max:Vec3}]
     this.bounds = bounds;         // {minX,maxX,minZ,maxZ} arena walls
+    this.rails = rails;           // Rails instance (grindable)
     this.pos = new THREE.Vector3(0, 0, 16);
     this.vel = new THREE.Vector3();
     this.onGround = false;
@@ -55,7 +66,16 @@ export class Controller {
     this.isSprinting = false;
     this.isMoving = false;
     this.isCrouching = false;
-    this.events = { landed: 0, jumped: false, stepped: false, slid: false };
+
+    // grind state
+    this.grind = null;
+    this._grindCd = 0;
+    this.isGrinding = false;
+    this.grindSpeed = 0;
+    this.grindBank = 0;
+    this._prevTan = new THREE.Vector3();
+
+    this.events = { landed: 0, jumped: false, stepped: false, slid: false, grindStart: false, grindEnd: false, grinding: false, perfect: false, boosted: false };
   }
 
   reset() {
@@ -64,13 +84,29 @@ export class Controller {
     this.onGround = false;
     this.crouchT = 0;
     this._sliding = false;
+    this.grind = null;
+    this._grindCd = 0;
+    this.isGrinding = false;
+    this.grindSpeed = 0;
+    this.grindBank = 0;
   }
 
   // wishYaw is the camera yaw (radians) used to orient movement input.
   update(dt, input, wishYaw) {
     const ev = this.events;
     ev.landed = 0; ev.jumped = false; ev.stepped = false; ev.slid = false;
+    ev.grindStart = false; ev.grindEnd = false; ev.grinding = false; ev.perfect = false; ev.boosted = false;
     this._jumpedThisFrame = false;
+    this._grindCd = Math.max(0, this._grindCd - dt);
+
+    // --- grind rails take over movement entirely while active ---
+    if (this.grind) { this._rideRail(dt, input, wishYaw); return; }
+    if (this.rails && this._grindCd <= 0 && this._tryLatch(input, wishYaw)) {
+      this._rideRail(dt, input, wishYaw);
+      return;
+    }
+    this.isGrinding = false;
+    this.grindBank = damp(this.grindBank, 0, 10, dt);
 
     const axis = input.moveAxis();
     const moving = axis.x !== 0 || axis.z !== 0;
@@ -172,6 +208,135 @@ export class Controller {
 
   get eyePosition() {
     return new THREE.Vector3(this.pos.x, this.pos.y + this.eyeHeight, this.pos.z);
+  }
+
+  // --- grind rails ----------------------------------------------------------
+
+  _tryLatch(input, wishYaw) {
+    _tmpV.set(this.pos.x, this.pos.y + 0.9, this.pos.z);
+    const feetY = this.pos.y;
+    const hit = this.rails.nearest(_tmpV, GRIND_LATCH_HORIZ, feetY - 0.9, feetY + 2.4); // grabbable band
+    if (!hit) return false;
+
+    const tan = hit.tangent;
+    let dot = this.vel.x * tan.x + this.vel.z * tan.z;
+    // Airborne: grab any rail you're near (jump onto it). Grounded: only grab if
+    // you're actually running ALONG it — so slow strafing in a firefight near a
+    // rail doesn't snatch you onto it.
+    const intent = !this.onGround || (this.horizSpeed > 5 && Math.abs(dot) > 3);
+    if (!intent) return false;
+
+    // travel direction from current velocity, falling back to look direction
+    if (Math.abs(dot) < 1.5) dot = (-Math.sin(wishYaw)) * tan.x + (-Math.cos(wishYaw)) * tan.z;
+    const dir = dot >= 0 ? 1 : -1;
+    const entry = clamp(Math.max(this.horizSpeed, GRIND_MIN), GRIND_MIN, GRIND_BOOST);
+
+    this.grind = { rail: hit.rail, t: hit.t, dir, speed: entry, boostT: 0.45, t0: 0 };
+    const p = this.rails.pointAt(hit.rail, hit.t);
+    this.pos.set(p.x, p.y, p.z);
+    this.onGround = false;
+    this._sliding = false;
+    this.crouchT = 0;
+    this.eyeHeight = STAND_EYE;
+    this.height = STAND_HEIGHT;
+    const t0 = this.rails.tangentAt(hit.rail, hit.t);
+    this._prevTan.set(t0.x * dir, 0, t0.z * dir);
+    this.events.grindStart = true;
+    this.events.boosted = true;
+    return true;
+  }
+
+  _rideRail(dt, input, wishYaw) {
+    const g = this.grind;
+    const ev = this.events;
+    g.t0 += dt;
+    g.boostT = Math.max(0, g.boostT - dt);
+
+    const target = g.boostT > 0 ? GRIND_BOOST : GRIND_TARGET;
+    g.speed = damp(g.speed, target, g.boostT > 0 ? 8 : 4.5, dt);
+
+    const tan = this.rails.tangentAt(g.rail, g.t);
+    const axis = input.moveAxis();
+    const sin = Math.sin(wishYaw), cos = Math.cos(wishYaw);
+    const wishX = axis.x * cos - axis.z * sin;
+    const wishZ = -axis.x * sin - axis.z * cos;
+    const along = wishX * tan.x + wishZ * tan.z;
+    const nlen = Math.hypot(tan.x, tan.z) || 1;
+    const nx = -tan.z / nlen, nz = tan.x / nlen;
+    const side = wishX * nx + wishZ * nz;
+
+    // steer the travel direction with forward/back input (after a short commit
+    // window, so the entry direction holds for a beat and you can't instantly
+    // flip on the frame you latch)
+    if (g.t0 > 0.16 && along * g.dir < -0.6) g.dir = -g.dir;
+
+    // hard sideways push peels you off the rail with momentum
+    if (g.t0 > 0.12 && Math.abs(side) > 0.6 && Math.abs(side) > Math.abs(along) * 0.7) {
+      this._detachRail(g, tan, nx * Math.sign(side), nz * Math.sign(side), 5.5, 1.6);
+      return;
+    }
+    // jump = launch off (perfect if near the tip of an open rail)
+    if (input.wasPressed('jump')) {
+      const nearEnd = !g.rail.closed && (g.dir > 0 ? g.t > 0.82 : g.t < 0.18);
+      this._launchOff(g, tan, GRIND_JUMP * (nearEnd ? 1.18 : 1), nearEnd);
+      return;
+    }
+    // crouch = drop off, keeping horizontal momentum
+    if (input.isDown('crouch')) { this._launchOff(g, tan, 0.4, false); return; }
+
+    // advance along the curve
+    g.t += g.dir * g.speed * dt / g.rail.length;
+    let ended = false;
+    if (g.rail.closed) g.t = ((g.t % 1) + 1) % 1;
+    else if (g.t >= 1) { g.t = 1; ended = true; }
+    else if (g.t <= 0) { g.t = 0; ended = true; }
+
+    const p = this.rails.pointAt(g.rail, g.t);
+    this.pos.set(p.x, p.y, p.z);
+
+    const ntan = this.rails.tangentAt(g.rail, g.t);
+    this.vel.set(ntan.x * g.dir * g.speed, ntan.y * g.dir * g.speed, ntan.z * g.dir * g.speed);
+
+    // camera bank from the rail's horizontal turn rate
+    const turn = ntan.x * this._prevTan.z - ntan.z * this._prevTan.x;
+    this.grindBank = clamp(turn * g.speed * 0.5, -0.5, 0.5);
+    this._prevTan.set(ntan.x * g.dir, 0, ntan.z * g.dir);
+
+    this.eyeHeight = STAND_EYE;
+    this.height = STAND_HEIGHT;
+    this.horizSpeed = Math.hypot(this.vel.x, this.vel.z);
+    this.speed = this.vel.length();
+    this.isMoving = true;
+    this.isGrinding = true;
+    this.isSprinting = false;
+    this.isCrouching = false;
+    this.grindSpeed = g.speed;
+    ev.grinding = true;
+
+    if (ended) this._launchOff(g, ntan, 0.6, false);
+  }
+
+  _launchOff(g, tan, up, perfect) {
+    this.vel.set(tan.x * g.dir * g.speed, tan.y * g.dir * g.speed + up, tan.z * g.dir * g.speed);
+    this.grind = null;
+    this.isGrinding = false;
+    this.grindSpeed = 0;
+    this.grindBank = 0;
+    this._grindCd = GRIND_CD;
+    this.onGround = false;
+    this.events.grindEnd = true;
+    if (perfect) this.events.perfect = true;
+  }
+
+  _detachRail(g, tan, vx, vz, boost, up) {
+    this.vel.set(tan.x * g.dir * g.speed + vx * boost, tan.y * g.dir * g.speed + up, tan.z * g.dir * g.speed + vz * boost);
+    this.grind = null;
+    this.isGrinding = false;
+    this.grindSpeed = 0;
+    this.grindBank = 0;
+    this._grindCd = GRIND_CD;
+    this.onGround = false;
+    this.events.grindEnd = true;
   }
 
   // --- physics helpers ----------------------------------------------------

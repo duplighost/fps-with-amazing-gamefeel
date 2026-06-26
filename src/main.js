@@ -11,6 +11,7 @@ import { Controller } from './player/controller.js';
 import { CameraRig } from './player/camera.js';
 import { Weapons } from './weapons/weapon.js';
 import { buildLevel } from './world/level.js';
+import { buildRails } from './world/rails.js';
 import { EnemyManager } from './enemies/enemy.js';
 import { HUD } from './ui/hud.js';
 
@@ -37,10 +38,11 @@ class Game {
     this.camera = new THREE.PerspectiveCamera(88, window.innerWidth / window.innerHeight, 0.05, 400);
 
     this.level = buildLevel(this.scene);
+    this.rails = buildRails(this.scene);
     this.fx = new FX(this.scene, this.camera);
     this.audio = new Audio();
     this.input = new Input(canvas);
-    this.controller = new Controller(this.level.colliders, this.level.bounds);
+    this.controller = new Controller(this.level.colliders, this.level.bounds, this.rails);
     this.cam = new CameraRig(this.camera);
 
     // player handle the enemy system reads/writes
@@ -186,6 +188,7 @@ class Game {
     this.fx.trauma = 0;
     this.fx.hitstop = 0;
     this.fx.slowmo = 1;
+    this.audio.stopGrind();
     this.health = MAX_HEALTH;
     this.invuln = 0;
     this.lastDamage = this.time;
@@ -215,6 +218,7 @@ class Game {
   die() {
     this.state = 'dead';
     this.input.exitLock();
+    this.audio.stopGrind();
     this.audio.gameOver();
     this.audio.setMusicIntensity(0);
     const secs = Math.max(0, Math.floor(this.time - this.runStart));
@@ -294,8 +298,10 @@ class Game {
       if (gdt > 0) {
         this.controller.update(gdt, this.input, this.cam.yaw);
         this._handleMovementAudio();
+        this._handleGrind(gdt);
         this.enemies.update(gdt);
         this.level.update(gdt, this.time);
+        this.rails.update(gdt);
         this._regen(gdt);
       }
       // Position the camera (eye, bob, shake) before resolving shots from it.
@@ -310,6 +316,7 @@ class Game {
 
     this.fx.update(realDt);
     this.hud.update(realDt, this.camera);
+    this.hud.setGrind(this.controller.isGrinding, this.controller.grindSpeed);
     if (this.input.isTouch) {
       this.hud.renderTouchStick(this.input.moveStick);
       this.hud.el.touchControls.style.display = this.state === 'playing' ? '' : 'none';
@@ -323,6 +330,35 @@ class Game {
     if (ev.landed > 0) this.audio.land(ev.landed);
     if (ev.stepped) this.audio.footstep(this.controller.isSprinting ? 1 : 0.5);
     if (ev.slid) this.audio.slide();
+  }
+
+  _handleGrind(dt) {
+    const c = this.controller;
+    const ev = c.events;
+    if (ev.grindStart) { this.audio.grindStart(); this.audio.startGrind(); this.cam.addFovPunch(3); }
+    if (ev.grinding) {
+      this.audio.setGrindIntensity(clamp01((c.grindSpeed - 10) / 18));
+      this.fx.addTrauma(0.02);
+      // spark trail streaming off behind the player
+      const l = Math.hypot(c.vel.x, c.vel.y, c.vel.z) || 1;
+      for (let i = 0; i < 2; i++) {
+        this.fx.sparks.emit(
+          c.pos.x, c.pos.y + 0.2, c.pos.z,
+          -c.vel.x / l * 3 + (Math.random() - 0.5) * 2, -c.vel.y / l * 3 + 1.5 + Math.random(), -c.vel.z / l * 3 + (Math.random() - 0.5) * 2,
+          0.6, 0.95, 1, 0.18 + Math.random() * 0.12, 0.4, 5, 5
+        );
+      }
+    }
+    if (ev.grindEnd) { this.audio.stopGrind(); this.audio.railLaunch(); this.fx.addTrauma(0.12); }
+    if (ev.perfect) {
+      this.audio.perfect();
+      this.fx.addSlowmo(0.34);
+      this.fx.addTrauma(0.22);
+      this.cam.addFovPunch(7);
+      this.enemies.score += 250;
+      this.hud.setScore(this.enemies.score);
+      this.hud.banner('PERFECT LAUNCH', '+250', '#7df9ff');
+    }
   }
 
   _regen(dt) {

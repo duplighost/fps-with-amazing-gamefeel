@@ -14,6 +14,7 @@ export class Audio {
     this.ready = false;
     this._noise = null;
     this._music = null;
+    this._grind = null;
     this.enabled = true;
     this._volume = 0.85;
     this._muted = false;
@@ -201,6 +202,47 @@ export class Audio {
 
   jump() { this._tone({ freq: 320, freq2: 480, dur: 0.1, vol: 0.18, type: 'square' }); }
   slide() { this._noiseBurst({ dur: 0.5, vol: 0.22, type: 'bandpass', freq: 1600, sweepTo: 300, q: 0.8 }); }
+
+  // --- grind rails ---
+  grindStart() { [0, 45, 90].forEach((d, i) => setTimeout(() => this._tone({ freq: 523 * Math.pow(1.33, i), dur: 0.08, vol: 0.18, type: 'triangle' }), d)); }
+  railLaunch() {
+    this._noiseBurst({ dur: 0.2, vol: 0.24, type: 'highpass', freq: 700, sweepTo: 3200 });
+    this._tone({ freq: 300, freq2: 760, dur: 0.16, vol: 0.2, type: 'sawtooth' });
+  }
+  perfect() { [0, 70, 150].forEach((d, i) => setTimeout(() => this._tone({ freq: 880 * Math.pow(1.5, i), dur: 0.12, vol: 0.2, type: 'sine' }), d)); }
+
+  startGrind() {
+    if (!this.ready || this._grind) return;
+    const t = this._now();
+    const src = this.ctx.createBufferSource();
+    src.buffer = this._noise; src.loop = true;
+    const filt = this.ctx.createBiquadFilter();
+    filt.type = 'bandpass'; filt.frequency.value = 1800; filt.Q.value = 1.2;
+    const g = this.ctx.createGain(); g.gain.value = 0.0001;
+    src.connect(filt).connect(g).connect(this.sfxGain);
+    src.start(t);
+    g.gain.setTargetAtTime(0.1, t, 0.05);
+    const osc = this.ctx.createOscillator(); osc.type = 'sawtooth'; osc.frequency.value = 420;
+    const og = this.ctx.createGain(); og.gain.value = 0.0001;
+    osc.connect(og).connect(this.sfxGain); osc.start(t);
+    og.gain.setTargetAtTime(0.03, t, 0.05);
+    this._grind = { src, filt, g, osc, og };
+  }
+  setGrindIntensity(x) {
+    if (!this._grind) return;
+    const t = this._now();
+    this._grind.filt.frequency.setTargetAtTime(1400 + x * 2600, t, 0.04);
+    this._grind.g.gain.setTargetAtTime(0.07 + x * 0.08, t, 0.05);
+    this._grind.osc.frequency.setTargetAtTime(360 + x * 540, t, 0.05);
+  }
+  stopGrind() {
+    if (!this._grind) return;
+    const t = this._now();
+    const m = this._grind; this._grind = null;
+    m.g.gain.setTargetAtTime(0.0001, t, 0.04);
+    m.og.gain.setTargetAtTime(0.0001, t, 0.04);
+    setTimeout(() => { try { m.src.stop(); } catch (e) {} try { m.osc.stop(); } catch (e) {} }, 130);
+  }
   land(intensity = 0.5) {
     this._noiseBurst({ dur: 0.08, vol: 0.18 + intensity * 0.2, type: 'lowpass', freq: 500, sweepTo: 120 });
     this._tone({ freq: 110, freq2: 55, dur: 0.1, vol: 0.12 + intensity * 0.1, type: 'sine' });

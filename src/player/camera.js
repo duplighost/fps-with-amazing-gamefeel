@@ -88,12 +88,14 @@ export class CameraRig {
     this._prevYaw = this.yaw;
     let targetRoll = -axis.x * 0.035 - clamp(yawVel, -8, 8) * 0.004;
     if (ctrl._sliding) targetRoll += -axis.x * 0.05 - 0.02;
-    this.roll = damp(this.roll, targetRoll, 10, dt);
+    if (ctrl.isGrinding) targetRoll += ctrl.grindBank; // bank into the rail's turns
+    this.roll = damp(this.roll, targetRoll, ctrl.isGrinding ? 7 : 10, dt);
 
-    // FOV: base + sprint + per-shot punch
+    // FOV: base + sprint + grind speed + per-shot punch
     let targetFov = BASE_FOV;
     if (ctrl.isSprinting) targetFov += SPRINT_FOV;
     if (ctrl._sliding) targetFov += SPRINT_FOV * 1.4;
+    if (ctrl.isGrinding) targetFov += clamp((ctrl.grindSpeed - 10) * 0.95, 0, 18);
     targetFov += this.fovPunch;
     this.fovPunch = damp(this.fovPunch, 0, 11, dt);
     this.fov = damp(this.fov, targetFov, 12, dt);

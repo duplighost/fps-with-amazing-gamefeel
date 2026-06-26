@@ -62,6 +62,7 @@ export class HUD {
       </div>
 
       <div id="combo">x<span id="combo-num">2</span></div>
+      <div id="grind-ind">↯ GRIND <b id="grind-spd">0</b></div>
       <div id="banner"><div id="banner-main"></div><div id="banner-sub"></div></div>
       <div id="low-ammo">RELOAD</div>
 
@@ -120,6 +121,8 @@ export class HUD {
       popupLayer: q('#popup-layer'),
       combo: q('#combo'),
       comboNum: q('#combo-num'),
+      grindInd: q('#grind-ind'),
+      grindSpd: q('#grind-spd'),
       bestLine: q('#best-line'),
       touchControls: q('#touch-controls'),
       moveStick: q('#move-stick'),
@@ -190,6 +193,11 @@ export class HUD {
   setScore(n) { this.el.score.textContent = n.toLocaleString(); }
   setWave(n) { this.el.wave.textContent = n; }
   setEnemies(n) { this.el.enemies.textContent = n; }
+
+  setGrind(active, speed) {
+    this.el.grindInd.classList.toggle('show', active);
+    if (active) this.el.grindSpd.textContent = Math.round(speed * 3.6); // show as km/h-ish for flavor
+  }
 
   setSpread(spread) {
     // map firing spread (radians) to crosshair gap in px

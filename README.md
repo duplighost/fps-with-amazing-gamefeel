@@ -35,6 +35,13 @@ Then open **http://localhost:8080** and click **PLAY** (this grabs your mouse).
 | **T** | toggle kill slow-mo |
 | **Esc** | pause |
 
+**Grind rails:** run or jump onto a glowing rail to latch on and rocket along it.
+Rails wrap the whole arena perimeter, climb from the floor up to the rooftops,
+and arc high across the middle. **Jump** to launch off carrying all your speed
+(do it near a rail's tip for a **PERFECT** bonus + slow-mo), **Ctrl** to drop off,
+or steer sideways to peel away. Aim is free the whole time, so you shoot while
+you grind — and launch off the high rails to rain fire from above.
+
 **On mobile** it auto-switches to touch controls: a floating left-stick to move,
 drag the right side to look, and on-screen **FIRE / JUMP / RLD / pause** buttons.
 
@@ -49,6 +56,10 @@ Game feel is the sum of a hundred small responses. The big ones here:
   friction + stop-speed for crisp starts and stops, air-strafe acceleration
   (strafe-jumping builds speed), coyote time, jump buffering, variable jump
   height, and a momentum-preserving crouch-slide.
+- **Grind rails** — Sonic/Rocket-Shoes-style rails wrapping the arena: a
+  forgiving magnetic latch, speed that ramps as you ride, free aim so you shoot
+  mid-grind, intuitive peel-off, and a perfect-dismount launch that flings your
+  momentum into the air. They take you up to the rooftops and across the map.
 - **Camera** — head bob tied to speed, a two-stage recoil (snappy kick → smooth
   recovery), dynamic FOV (sprint + per-shot punch), strafe lean/roll, and a
   sprung landing dip.
@@ -92,6 +103,7 @@ src/
     weapon.js         weapons, viewmodels, firing, reload
   world/
     level.js          arena geometry, lighting, colliders
+    rails.js          grindable neon rails (curves + latch queries)
   enemies/
     enemy.js          enemy AI + wave manager
   ui/

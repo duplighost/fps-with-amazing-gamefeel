@@ -145,6 +145,14 @@ body { font-family: var(--font); color: #fff; user-select: none; -webkit-user-se
   100% { opacity: 0; transform: translateX(-50%) scale(0.96); }
 }
 
+#grind-ind {
+  position: absolute; left: 50%; top: 62%; transform: translateX(-50%) scale(0.9);
+  font-weight: 900; letter-spacing: 4px; font-size: 20px; color: var(--cyan);
+  text-shadow: 0 0 16px rgba(125, 249, 255, 0.9); opacity: 0; transition: opacity 0.1s, transform 0.1s;
+}
+#grind-ind.show { opacity: 1; transform: translateX(-50%) scale(1); }
+#grind-ind b { font-family: var(--mono); color: #fff; }
+
 #low-ammo {
   position: absolute; left: 50%; top: 58%; transform: translateX(-50%);
   font-weight: 800; letter-spacing: 4px; color: var(--pink); opacity: 0;
