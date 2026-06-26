@@ -52,8 +52,10 @@ Game feel is the sum of a hundred small responses. The big ones here:
 
 - **Movement** — Quake/Source-style explicit ground/air acceleration with
   friction + stop-speed for crisp starts and stops, air-strafe acceleration
-  (strafe-jumping builds speed), coyote time, jump buffering, variable jump
-  height, and a momentum-preserving crouch-slide.
+  (strafe-jumping builds speed), coyote time, jump buffering, a floaty
+  low-gravity jump with variable height, and a momentum-preserving crouch-slide.
+  The arena is multi-tier — a central ziggurat you hop up tier-by-tier, plus
+  stair-access high platforms — so the jump actually matters.
 - **Grind rail** — a Sonic/Rocket-Shoes-style rail wrapping the arena perimeter:
   a forgiving magnetic latch, speed that ramps as you ride, free aim so you shoot
   mid-grind, intuitive peel-off, and a launch that flings your momentum.

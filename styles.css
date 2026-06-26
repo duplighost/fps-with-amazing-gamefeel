@@ -71,13 +71,20 @@ body { font-family: var(--font); color: #fff; user-select: none; -webkit-user-se
   100% { opacity: 0; transform: translate(-50%, -50%) scale(0.7); }
 }
 
+/* ---------- hit flash (sharp punch when you take damage) ---------- */
+#hit-flash {
+  position: absolute; inset: 0; opacity: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse at center, rgba(255, 30, 50, 0.25) 0%, rgba(255, 0, 30, 0.6) 70%, rgba(180, 0, 20, 0.85) 100%);
+}
+
 /* ---------- directional damage indicators ---------- */
 #hit-dir-layer { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
 .hit-dir {
   position: absolute; left: 0; top: 0; width: 0; height: 0;
-  border-left: 22px solid transparent; border-right: 22px solid transparent;
-  border-bottom: 30px solid rgba(255, 40, 60, 0.85);
-  filter: drop-shadow(0 0 6px rgba(255, 40, 60, 0.7));
+  border-left: 34px solid transparent; border-right: 34px solid transparent;
+  border-bottom: 44px solid rgba(255, 45, 70, 0.92);
+  filter: drop-shadow(0 0 14px rgba(255, 40, 60, 0.95));
 }
 
 /* ---------- popups (floating numbers) ---------- */
@@ -103,6 +110,10 @@ body { font-family: var(--font); color: #fff; user-select: none; -webkit-user-se
 #health-num { font-family: var(--mono); font-size: 30px; font-weight: 800; min-width: 56px; }
 #health-wrap.pulse #health-icon { animation: hurt 0.3s ease-out; }
 @keyframes hurt { 0% { transform: scale(1.6); color: #fff; } 100% { transform: scale(1); } }
+#health-wrap.hit { animation: hitshake 0.32s ease-out; }
+#health-wrap.hit #health-bar { animation: hitbar 0.32s ease-out; }
+@keyframes hitshake { 0% { transform: translateX(-5px); } 25% { transform: translateX(5px); } 50% { transform: translateX(-3px); } 100% { transform: translateX(0); } }
+@keyframes hitbar { 0% { border-color: #fff; box-shadow: 0 0 22px rgba(255, 40, 60, 0.9); } 100% { border-color: rgba(125, 249, 255, 0.35); } }
 
 #hud-bottom-right { position: absolute; right: 32px; bottom: 28px; text-align: right; }
 #weapon-name { font-size: 15px; letter-spacing: 3px; color: var(--cyan); opacity: 0.85; margin-bottom: 2px; }

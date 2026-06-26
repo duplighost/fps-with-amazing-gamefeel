@@ -209,9 +209,9 @@ class Game {
     this.hud.setHealth(Math.max(0, this.health), MAX_HEALTH);
     this.hud.damageFlash(clamp01(amount / 30), sourcePos, this.camera);
     this.audio.playerHurt();
-    this.fx.addTrauma(clamp(amount / 28, 0.12, 0.6));
-    this.fx.addHitstop(clamp(amount / 220, 0.015, 0.05)); // brief jolt on being hit
-    this.cam.addRecoil(0.02 + amount * 0.0016, (Math.random() - 0.5) * 0.05); // flinch
+    this.fx.addTrauma(clamp(amount / 22, 0.2, 0.7));
+    this.fx.addHitstop(clamp(amount / 200, 0.02, 0.06)); // brief jolt on being hit
+    this.cam.addRecoil(0.05 + amount * 0.0022, (Math.random() - 0.5) * 0.09); // flinch
     if (this.health <= 0) this.die();
   }
 

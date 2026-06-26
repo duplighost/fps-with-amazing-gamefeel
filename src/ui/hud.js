@@ -20,6 +20,7 @@ export class HUD {
     this.hitFlash = 0;
     this.killFlash = 0;
     this.dmgFlash = 0;
+    this.hitFlashAmt = 0;
     this.lowHealthPulse = 0;
     this.combo = 0;
     this.comboTimer = 0;
@@ -31,6 +32,7 @@ export class HUD {
       <div id="vignette"></div>
       <div id="timewarp"></div>
       <div id="dmg-vignette"></div>
+      <div id="hit-flash"></div>
       <div id="hit-dir-layer"></div>
       <div id="crosshair">
         <div class="ch-dot"></div>
@@ -119,6 +121,7 @@ export class HUD {
       controls: q('#controls'),
       vignette: q('#dmg-vignette'),
       timewarp: q('#timewarp'),
+      hitFlash: q('#hit-flash'),
       hitDirLayer: q('#hit-dir-layer'),
       popupLayer: q('#popup-layer'),
       combo: q('#combo'),
@@ -237,7 +240,12 @@ export class HUD {
   }
 
   damageFlash(intensity, sourcePos, camera) {
-    this.dmgFlash = Math.max(this.dmgFlash, 0.4 + clamp01(intensity) * 0.5);
+    const i = clamp01(intensity);
+    this.dmgFlash = Math.max(this.dmgFlash, 0.6 + i * 0.4);   // lingering red vignette
+    this.hitFlashAmt = Math.max(this.hitFlashAmt, 0.5 + i * 0.45); // sharp instant punch
+    this.el.healthWrap.classList.remove('hit');
+    void this.el.healthWrap.offsetWidth;
+    this.el.healthWrap.classList.add('hit');
     if (sourcePos && camera) this._spawnDirIndicator(sourcePos, camera);
   }
 
@@ -245,7 +253,7 @@ export class HUD {
     const el = document.createElement('div');
     el.className = 'hit-dir';
     this.el.hitDirLayer.appendChild(el);
-    this.dmgIndicators.push({ el, life: 1.4, sourcePos: sourcePos.clone() });
+    this.dmgIndicators.push({ el, life: 2.0, max: 2.0, sourcePos: sourcePos.clone() });
   }
 
   popDamage(worldPos, amount, isHead, camera) {
@@ -341,8 +349,10 @@ export class HUD {
     const lowT = clamp01(1 - this.health / (this.maxHealth * 0.4));
     this.lowHealthPulse += dt * lerp(2, 8, lowT);
     const lowBase = lowT * (0.16 + (Math.sin(this.lowHealthPulse) * 0.5 + 0.5) * 0.22 * lowT);
-    this.dmgFlash = Math.max(0, this.dmgFlash - dt * 1.8);
+    this.dmgFlash = Math.max(0, this.dmgFlash - dt * 1.3);
     this.el.vignette.style.opacity = Math.max(this.dmgFlash, lowBase).toFixed(3);
+    this.hitFlashAmt = Math.max(0, this.hitFlashAmt - dt * 4.5);
+    this.el.hitFlash.style.opacity = this.hitFlashAmt.toFixed(3);
 
     // combo timer
     if (this.comboTimer > 0) {
@@ -383,8 +393,8 @@ export class HUD {
       let rel = srcYaw - camYaw;
       while (rel > Math.PI) rel -= Math.PI * 2;
       while (rel < -Math.PI) rel += Math.PI * 2;
-      d.el.style.transform = `translate(-50%,-50%) rotate(${-rel}rad) translateY(-150px)`;
-      d.el.style.opacity = String(clamp01(d.life / 1.4));
+      d.el.style.transform = `translate(-50%,-50%) rotate(${-rel}rad) translateY(-180px)`;
+      d.el.style.opacity = String(clamp01(d.life / (d.max || 2.0)));
       if (d.life <= 0) { d.el.remove(); this.dmgIndicators.splice(i, 1); }
     }
   }

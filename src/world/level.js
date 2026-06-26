@@ -114,7 +114,7 @@ export function buildLevel(scene) {
   // --- corner cover pillars ---
   const pillars = [
     [-14, -14], [14, -14], [-14, 14], [14, 14],
-    [-20, 0], [20, 0], [0, -20], [0, 20],
+    [0, -20], [0, 20],
   ];
   for (const [x, z] of pillars) {
     const h = rand(3.5, 5.5);
@@ -138,6 +138,20 @@ export function buildLevel(scene) {
   buildRamp(addBox, crateMat, -25, -21.5, 5, 2.6, 'z+');
   addBox(25, 0, 25, 7, 2.6, 7, pillarMat);     // spans z 21.5..28.5
   buildRamp(addBox, crateMat, 25, 21.5, 5, 2.6, 'z-');
+
+  // --- central ziggurat: stack of tiers you hop up with the floaty jump ---
+  addBox(0, 1.2, 0, 6, 1.8, 6, pillarMat);     // tier 2, top at 3.0
+  addStrip(0, 3.01, 0, 6, 0.06, 6, 0x33d6ff);
+  addBox(0, 3.0, 0, 3, 2.0, 3, pillarMat);     // tier 3, top at 5.0 (high vantage)
+  addStrip(0, 5.01, 0, 3, 0.06, 3, 0xffc24a);
+
+  // --- two high platforms (above), reached by proper staircases ---
+  addBox(-20, 0, 0, 6, 4.5, 6, pillarMat);     // west high platform, top 4.5
+  addStrip(-20, 4.51, 0, 6, 0.06, 6, 0xff3a6b);
+  buildStairs(addBox, crateMat, -10, 0, -1, 0, 10, 0.45, 0.7, 4.5);
+  addBox(20, 0, 0, 6, 4.5, 6, pillarMat);      // east high platform, top 4.5
+  addStrip(20, 4.51, 0, 6, 0.06, 6, 0xff3a6b);
+  buildStairs(addBox, crateMat, 10, 0, 1, 0, 10, 0.45, 0.7, 4.5);
 
   // --- spawn points around the perimeter (kept off cover) ---
   const spawnPoints = [];
@@ -163,6 +177,20 @@ export function buildLevel(scene) {
 }
 
 function pick(arr) { return arr[(Math.random() * arr.length) | 0]; }
+
+// A straight staircase rising in an axis-aligned direction (dirX/dirZ is ±1 on
+// one axis, 0 on the other). Each step is a solid box from the floor up; the
+// per-step rise stays under the controller's STEP_HEIGHT so it's walkable.
+function buildStairs(addBox, mat, x, z, dirX, dirZ, count, stepH, stepD, width) {
+  for (let i = 0; i < count; i++) {
+    const h = (i + 1) * stepH;
+    const cx = x + dirX * (i + 0.5) * stepD;
+    const cz = z + dirZ * (i + 0.5) * stepD;
+    const w = dirX !== 0 ? stepD : width;
+    const d = dirZ !== 0 ? stepD : width;
+    addBox(cx, 0, cz, w, h, d, mat, { shadow: i === count - 1 });
+  }
+}
 
 // Build a ramp from stacked steps that RISE toward the platform, so the player
 // can walk up with the existing AABB step-up (no slope code needed). `edgeZ` is
