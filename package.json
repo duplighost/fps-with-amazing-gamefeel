@@ -1,0 +1,21 @@
+{
+  "name": "neon-breach",
+  "version": "1.0.0",
+  "description": "A browser FPS built around amazing game feel — Quake-style movement, recoil, screen shake, hitstop, particles and procedural audio. Three.js, no build step.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "serve": "node server.js"
+  },
+  "keywords": [
+    "fps",
+    "game",
+    "threejs",
+    "webgl",
+    "gamefeel"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "three": "0.161.0"
+  }
+}
