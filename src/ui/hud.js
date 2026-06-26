@@ -29,6 +29,7 @@ export class HUD {
   _build() {
     this.root.innerHTML = `
       <div id="vignette"></div>
+      <div id="timewarp"></div>
       <div id="dmg-vignette"></div>
       <div id="hit-dir-layer"></div>
       <div id="crosshair">
@@ -117,6 +118,7 @@ export class HUD {
       tag: q('#game-tag'),
       controls: q('#controls'),
       vignette: q('#dmg-vignette'),
+      timewarp: q('#timewarp'),
       hitDirLayer: q('#hit-dir-layer'),
       popupLayer: q('#popup-layer'),
       combo: q('#combo'),
@@ -197,6 +199,13 @@ export class HUD {
   setGrind(active, speed) {
     this.el.grindInd.classList.toggle('show', active);
     if (active) this.el.grindSpd.textContent = Math.round(speed * 3.6); // show as km/h-ish for flavor
+  }
+
+  // Visual time-warp cue: a blue edge tint that deepens as time slows (slowmo 1
+  // = normal, lower = slower). Makes the kill slow-mo unmistakable.
+  setTimewarp(slowmo) {
+    const amt = clamp01((1 - slowmo) * 1.5);
+    this.el.timewarp.style.opacity = amt.toFixed(3);
   }
 
   setSpread(spread) {

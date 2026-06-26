@@ -15,7 +15,7 @@ export function buildLevel(scene) {
   const animated = [];
 
   // --- atmosphere ---
-  scene.background = gradientSky();
+  scene.background = makeSky();
   scene.fog = new THREE.FogExp2(0x0a0c14, 0.012);
 
   // --- lights ---
@@ -213,18 +213,83 @@ function gridTexture(bg, line, glow) {
   return tex;
 }
 
-function gradientSky() {
+// A procedural equirectangular night sky: deep-space gradient, a starfield that
+// thickens toward the zenith, soft neon nebula clouds, a glowing horizon band,
+// and a moon. Wrapped around the scene as the skybox.
+function makeSky() {
+  const W = 2048, H = 1024;
   const c = document.createElement('canvas');
-  c.width = 16; c.height = 256;
+  c.width = W; c.height = H;
   const ctx = c.getContext('2d');
-  const g = ctx.createLinearGradient(0, 0, 0, 256);
-  g.addColorStop(0, '#070912');
-  g.addColorStop(0.5, '#0e1322');
-  g.addColorStop(0.78, '#1a2140');
-  g.addColorStop(1, '#2a1c3a');
+
+  // base vertical gradient (top = zenith, middle = horizon, bottom = nadir)
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0.0, '#05060f');
+  g.addColorStop(0.30, '#0a0a1e');
+  g.addColorStop(0.46, '#1a1140');
+  g.addColorStop(0.50, '#3a1d5e');
+  g.addColorStop(0.54, '#0c0a1a');
+  g.addColorStop(1.0, '#020308');
   ctx.fillStyle = g;
-  ctx.fillRect(0, 0, 16, 256);
+  ctx.fillRect(0, 0, W, H);
+
+  // nebula clouds (additive), in the upper sky
+  ctx.globalCompositeOperation = 'lighter';
+  const nebs = [
+    ['rgba(120,40,200,0.16)', 0.20, 0.22, 440],
+    ['rgba(40,120,220,0.13)', 0.62, 0.30, 540],
+    ['rgba(220,40,140,0.10)', 0.86, 0.16, 380],
+    ['rgba(40,200,200,0.10)', 0.42, 0.40, 320],
+    ['rgba(150,90,255,0.10)', 0.05, 0.34, 360],
+  ];
+  for (const [col, fx, fy, r] of nebs) {
+    const x = fx * W, y = fy * H;
+    const rg = ctx.createRadialGradient(x, y, 0, x, y, r);
+    rg.addColorStop(0, col); rg.addColorStop(1, 'transparent');
+    ctx.fillStyle = rg;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // stars — denser toward the top, only above the horizon
+  for (let i = 0; i < 1200; i++) {
+    const x = Math.random() * W;
+    const y = Math.pow(Math.random(), 1.5) * 0.48 * H;
+    const bright = Math.random();
+    const size = bright < 0.92 ? 0.6 + Math.random() * 1.1 : 1.5 + Math.random() * 1.7;
+    const a = 0.3 + Math.random() * 0.7;
+    ctx.fillStyle = `rgba(${(205 + Math.random() * 50) | 0},${(220 + Math.random() * 35) | 0},255,${a})`;
+    ctx.fillRect(x, y, size, size);
+    if (bright > 0.975) { // a few bright stars get a glow
+      const rg = ctx.createRadialGradient(x, y, 0, x, y, 7);
+      rg.addColorStop(0, `rgba(180,220,255,${a * 0.6})`); rg.addColorStop(1, 'transparent');
+      ctx.fillStyle = rg;
+      ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  // glowing horizon band
+  const hb = ctx.createLinearGradient(0, 0.40 * H, 0, 0.56 * H);
+  hb.addColorStop(0, 'transparent');
+  hb.addColorStop(0.5, 'rgba(120,80,220,0.35)');
+  hb.addColorStop(0.66, 'rgba(60,200,230,0.22)');
+  hb.addColorStop(1, 'transparent');
+  ctx.fillStyle = hb;
+  ctx.fillRect(0, 0.40 * H, W, 0.16 * H);
+
+  // a soft moon with a halo
+  const mx = 0.72 * W, my = 0.17 * H;
+  const halo = ctx.createRadialGradient(mx, my, 0, mx, my, 80);
+  halo.addColorStop(0, 'rgba(220,235,255,0.9)');
+  halo.addColorStop(0.28, 'rgba(170,205,255,0.45)');
+  halo.addColorStop(1, 'transparent');
+  ctx.fillStyle = halo;
+  ctx.beginPath(); ctx.arc(mx, my, 80, 0, Math.PI * 2); ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = 'rgba(232,240,255,0.96)';
+  ctx.beginPath(); ctx.arc(mx, my, 26, 0, Math.PI * 2); ctx.fill();
+
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
+  tex.mapping = THREE.EquirectangularReflectionMapping;
   return tex;
 }

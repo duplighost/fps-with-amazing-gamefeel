@@ -257,11 +257,11 @@ class Game {
     else if (isHead) this.fx.addHitstop(0.04);
     if (isHead && !killed) this.audio.headshot();
 
-    // Slow-mo flourish on kills (toggle with 'T'): a little weight on every
-    // kill, a beat on head-kills, and a cinematic dip when a wave is cleared.
+    // Slow-mo flourish on kills (toggle with 'T'): clearly readable — the world
+    // visibly crawls for a beat. Deeper on head-kills, deepest on a wave-clear.
     if (killed && this.slowmoEnabled) {
       const cleared = this.enemies.aliveCount() === 0 && this.enemies.spawnQueue.length === 0;
-      this.fx.addSlowmo(cleared ? 0.28 : isHead ? 0.45 : 0.7);
+      this.fx.addSlowmo(cleared ? 0.15 : isHead ? 0.28 : 0.42);
     }
   }
 
@@ -317,6 +317,7 @@ class Game {
     this.fx.update(realDt);
     this.hud.update(realDt, this.camera);
     this.hud.setGrind(this.controller.isGrinding, this.controller.grindSpeed);
+    this.hud.setTimewarp(this.fx.slowmo);
     if (this.input.isTouch) {
       this.hud.renderTouchStick(this.input.moveStick);
       this.hud.el.touchControls.style.display = this.state === 'playing' ? '' : 'none';

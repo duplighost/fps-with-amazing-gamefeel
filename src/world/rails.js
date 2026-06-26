@@ -19,20 +19,6 @@ const RAIL_DEFS = [
       [-29, 2.4, 0], [-27, 3.8, -27], [0, 2.4, -29], [27, 3.8, -27],
     ],
   },
-  {
-    name: 'riseNE', color: 0x3affc0, radius: 0.1,
-    // floor up to the NE sniper platform top (~2.6); starts out of the spawn area
-    points: [[10, 0.4, 10], [15, 1.2, 15], [20, 2.1, 20], [24.5, 2.8, 24.5]],
-  },
-  {
-    name: 'riseSW', color: 0x3affc0, radius: 0.1,
-    points: [[-10, 0.4, -10], [-15, 1.2, -15], [-20, 2.1, -20], [-24.5, 2.8, -24.5]],
-  },
-  {
-    name: 'cross', color: 0xff3a6b, radius: 0.12,
-    // a big arc from the NE roof, up over the center (apex 9), down to the SW roof
-    points: [[24.5, 3.0, 24.5], [12, 6.5, 12], [0, 9.0, 0], [-12, 6.5, -12], [-24.5, 3.0, -24.5]],
-  },
 ];
 
 export function buildRails(scene) {

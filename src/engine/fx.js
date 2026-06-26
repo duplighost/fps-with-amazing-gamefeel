@@ -378,9 +378,9 @@ export class FX {
       }
     }
 
-    // decay trauma + ease slow-mo back to normal
+    // decay trauma + ease slow-mo back to normal (slow enough to be felt)
     this.trauma = clamp01(this.trauma - realDt * 1.6);
-    this.slowmo = damp(this.slowmo, 1, 5.5, realDt);
+    this.slowmo = damp(this.slowmo, 1, 3.2, realDt);
     this.shakeTime += realDt;
   }
 
