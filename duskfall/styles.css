@@ -201,6 +201,27 @@ body { font-family: var(--font); color: #fff; user-select: none; -webkit-user-se
 #grind-ind.show { opacity: 1; transform: translateX(-50%) scale(1); }
 #grind-ind b { font-family: var(--mono); color: #fff; }
 
+/* ---------- boss health bar ---------- */
+#boss-bar {
+  position: absolute; top: 84px; left: 50%; transform: translateX(-50%) translateY(-12px);
+  width: min(620px, 70vw); text-align: center; opacity: 0; pointer-events: none;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+#boss-bar.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+#boss-name {
+  font-family: var(--font); font-weight: 900; letter-spacing: 6px; font-size: 18px;
+  color: #ff7a4a; text-shadow: 0 0 16px rgba(255, 68, 22, 0.8); margin-bottom: 6px;
+}
+#boss-track {
+  height: 14px; background: rgba(20, 8, 6, 0.72); border: 1px solid rgba(255, 90, 50, 0.5);
+  border-radius: 3px; overflow: hidden; box-shadow: 0 0 20px rgba(255, 60, 20, 0.4);
+}
+#boss-fill {
+  height: 100%; width: 100%;
+  background: linear-gradient(90deg, #ff3311, #ff8a2a);
+  box-shadow: 0 0 14px rgba(255, 100, 40, 0.9); transition: width 0.12s linear;
+}
+
 #low-ammo {
   position: absolute; left: 50%; top: 58%; transform: translateX(-50%);
   font-weight: 800; letter-spacing: 4px; color: var(--pink); opacity: 0;

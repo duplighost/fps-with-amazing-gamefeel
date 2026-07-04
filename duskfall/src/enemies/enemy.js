@@ -41,6 +41,13 @@ const TYPES = {
     skin: 0x7c7a34, accent: 0xff8a1e, blood: 0x9fb830, rate: 4.5, reach: 1.1,
     gait: 'waddle', headY: 0.8, burst: true, build: buildBloater,
   },
+  // --- BOSS: a towering molten titan that slams and calls in reinforcements ---
+  colossus: {
+    hp: 1600, speed: 2.2, radius: 1.7, height: 5.0, damage: 42, attackCd: 2.4, score: 3000,
+    skin: 0x4a3a3e, accent: 0xff4416, blood: 0xff6a22, rate: 2.4, reach: 3.4,
+    gait: 'stomp', headY: 0.9, stomp: true, deathTrauma: 0.7, boss: true, name: 'THE COLOSSUS',
+    build: buildColossus,
+  },
 };
 
 // --- material + primitive helpers ----------------------------------------
@@ -338,6 +345,99 @@ function buildBloater(def) {
   return { root, parts, hitMeshes, skinMats: [skin], materials };
 }
 
+function buildColossus(def) {
+  const s = def.height / 5.0;
+  const armor = new THREE.MeshStandardMaterial({ color: def.skin, roughness: 0.6, metalness: 0.3, flatShading: true });
+  const plate = new THREE.MeshStandardMaterial({ color: 0x241c1e, roughness: 0.5, metalness: 0.45, flatShading: true });
+  const core = glowMat(def.accent, 3.2);
+  const materials = [armor, plate, core];
+  const root = new THREE.Group();
+  const hitMeshes = [];
+
+  const hipH = 2.2 * s;
+  const pelvis = new THREE.Group(); pelvis.position.y = hipH; root.add(pelvis);
+
+  // colossal chest — two stacked blocks
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(2.3 * s, 1.9 * s, 1.4 * s), armor);
+  torso.position.y = 0.9 * s; torso.castShadow = true; pelvis.add(torso);
+  torso.userData.hit = 'body'; hitMeshes.push(torso);
+  const upper = new THREE.Mesh(new THREE.BoxGeometry(2.7 * s, 0.9 * s, 1.3 * s), plate);
+  upper.position.y = 1.75 * s; upper.castShadow = true; pelvis.add(upper);
+
+  // huge exposed molten core (the glowing heart) + a cracked ring around it
+  const coreO = new THREE.Mesh(new THREE.SphereGeometry(0.55 * s, 16, 14), core);
+  coreO.position.set(0, 0.95 * s, 0.7 * s); pelvis.add(coreO);
+  coreO.userData.hit = 'body'; hitMeshes.push(coreO);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.62 * s, 0.1 * s, 8, 20), plate);
+  ring.position.set(0, 0.95 * s, 0.72 * s); pelvis.add(ring);
+
+  // enormous pauldrons
+  for (const sx of [-1, 1]) {
+    const pa = new THREE.Mesh(new THREE.SphereGeometry(0.72 * s, 12, 10), plate);
+    pa.position.set(sx * 1.5 * s, 1.7 * s, 0); pa.scale.set(1, 0.8, 1); pa.castShadow = true; pelvis.add(pa);
+    const spike = new THREE.Mesh(new THREE.ConeGeometry(0.22 * s, 0.8 * s, 6), plate);
+    spike.position.set(sx * 1.6 * s, 2.2 * s, 0); spike.rotation.z = sx * -0.4; pelvis.add(spike);
+  }
+
+  // small brutal head sunk between the shoulders
+  const headG = new THREE.Group(); headG.position.y = 2.35 * s; pelvis.add(headG);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.34 * s, 12, 10), armor);
+  head.scale.set(1, 1.1, 1.05); head.castShadow = true; headG.add(head);
+  head.userData.hit = 'head'; hitMeshes.push(head);
+  for (const sx of [-1, 1]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.07 * s, 6, 6), core);
+    eye.position.set(sx * 0.12 * s, 0.03 * s, 0.28 * s); headG.add(eye);
+  }
+  // a horn crown
+  for (const sx of [-1, 1]) {
+    const horn = new THREE.Mesh(new THREE.ConeGeometry(0.09 * s, 0.5 * s, 6), plate);
+    horn.position.set(sx * 0.2 * s, 0.35 * s, 0); horn.rotation.z = sx * -0.5; headG.add(horn);
+  }
+
+  const parts = { pelvis, torso, head: headG, hipH, s };
+
+  // molten veins for the limbs, reusing the emissive core
+  const addVeins = (g, len, r, n) => {
+    for (let k = 0; k < n; k++) {
+      const a = rand(-1.15, 1.15);
+      const y = -len * (0.14 + (k / n) * 0.72);
+      const h = rand(0.16, 0.3) * len;
+      const v = new THREE.Mesh(new THREE.BoxGeometry(0.07 * s, h, 0.05 * s), core);
+      v.position.set(Math.sin(a) * r * 0.92, y, Math.cos(a) * r * 0.92);
+      v.rotation.set(0, -a, rand(-0.5, 0.5));
+      g.add(v);
+    }
+    const ember = new THREE.Mesh(new THREE.SphereGeometry(r * 0.4, 8, 7), core);
+    ember.position.set(0, -len * 0.52, r * 0.5); g.add(ember);
+  };
+  // chest cracks radiating from the core
+  for (let i = 0; i < 8; i++) {
+    const cr = new THREE.Mesh(new THREE.BoxGeometry(0.1 * s, rand(0.5, 1.0) * s, 0.04 * s), core);
+    cr.position.set(rand(-0.9, 0.9) * s, 0.9 * s + rand(-0.5, 0.5) * s, 0.71 * s);
+    cr.rotation.z = rand(-1.2, 1.2); pelvis.add(cr);
+  }
+
+  // gigantic arms with fists
+  const armL = bone(armor, 0.38 * s, 2.3 * s); armL.group.position.set(-1.6 * s, 1.6 * s, 0);
+  const armR = bone(armor, 0.38 * s, 2.3 * s); armR.group.position.set(1.6 * s, 1.6 * s, 0);
+  for (const a of [armL, armR]) {
+    const fist = new THREE.Mesh(new THREE.SphereGeometry(0.5 * s, 10, 9), plate); fist.position.y = -2.1 * s; a.group.add(fist); fist.castShadow = true;
+    const knuck = new THREE.Mesh(new THREE.SphereGeometry(0.24 * s, 8, 7), core); knuck.position.set(0, -2.1 * s, 0.34 * s); a.group.add(knuck);
+    addVeins(a.group, 2.3 * s, 0.38 * s, 5);
+  }
+  pelvis.add(armL.group, armR.group); parts.armL = armL.group; parts.armR = armR.group;
+  hitMeshes.push(armL.mesh, armR.mesh);
+
+  // massive legs
+  const legL = bone(armor, 0.42 * s, hipH); legL.group.position.set(-0.7 * s, hipH, 0);
+  const legR = bone(armor, 0.42 * s, hipH); legR.group.position.set(0.7 * s, hipH, 0);
+  for (const l of [legL, legR]) addVeins(l.group, hipH, 0.42 * s, 5);
+  root.add(legL.group, legR.group); parts.legL = legL.group; parts.legR = legR.group;
+  hitMeshes.push(legL.mesh, legR.mesh);
+
+  return { root, parts, hitMeshes, skinMats: [armor, plate], materials };
+}
+
 // ==========================================================================
 
 export class Enemy {
@@ -365,6 +465,12 @@ export class Enemy {
     this.weavePhase = rand(0, Math.PI * 2);
     this.bob = 0;
     this._stepSign = 0;
+    this.enraged = false;
+    this.boss = !!this.def.boss;
+    this._beacon = null;
+    this._slamT = -1;              // boss slam windup timer (-1 = idle)
+    this._addCd = rand(6, 9);     // boss add-spawn cooldown
+    this._enrageDmg = 1;
 
     const built = this.def.build(this.def);
     this.group = built.root;
@@ -422,6 +528,26 @@ export class Enemy {
     this.mgr._onKilled(this, isHead);
   }
 
+  // Turn the lone straggler into a hunter: faster, hits harder, beelines you,
+  // and plants a tall glowing beacon so you can find it across the field.
+  enrage() {
+    if (this.enraged || this.boss) return;
+    this.enraged = true;
+    this.speed *= 1.75;
+    this._enrageDmg = 1.6;
+    const mat = new THREE.MeshBasicMaterial({ color: 0xff2a1a, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 46, 8, 1, true), mat);
+    beacon.position.y = 20; beacon.frustumCulled = false;
+    this.group.add(beacon); this._beacon = beacon;
+    // a marker chevron orb over the head
+    const orbMat = new THREE.MeshBasicMaterial({ color: 0xff5030 });
+    const orb = new THREE.Mesh(new THREE.OctahedronGeometry(0.35, 0), orbMat);
+    orb.position.y = this.def.height + 0.9; this.group.add(orb); this._orb = orb;
+    this.materials.push(mat, orbMat);   // so they fade + dispose with the enemy
+    this.mgr.fx.addTrauma(0.25);
+    this.mgr.audio.enrage(this.mgr.panFor(this.pos));
+  }
+
   update(dt, player) {
     if (this.deathT >= 0) { this._updateDeath(dt); return; }
 
@@ -450,8 +576,8 @@ export class Enemy {
 
     if (dist > def.reach + 0.4) desired.addScaledVector(dir, spd);
 
-    // stalker/wisp weave: a sideways sine so they don't beeline
-    if (def.weave && this.lunging <= 0) {
+    // stalker/wisp weave: a sideways sine so they don't beeline (enraged charges straight)
+    if (def.weave && this.lunging <= 0 && !this.enraged) {
       this.weavePhase += dt * def.weave;
       const perp = new THREE.Vector3(dir.z, 0, -dir.x);
       desired.addScaledVector(perp, Math.sin(this.weavePhase) * spd * 0.6);
@@ -473,13 +599,25 @@ export class Enemy {
     // apply visual bob (float/stomp) on top of pos
     this.group.position.set(this.pos.x, this.pos.y + this.bob, this.pos.z);
 
-    // attack on contact
-    this.attackTimer -= dt;
-    if (dist <= def.reach + player.radius + 0.5 && this.attackTimer <= 0) {
-      this.attackTimer = def.attackCd;
-      player.takeDamage(def.damage + this.mgr.wave * 0.5, this.pos);
-      this.mgr.audio.enemyAttack(this.mgr.panFor(this.pos));
-      if (this.parts.armL) { this.parts.armL.rotation.x = -2.4; this.parts.armR.rotation.x = -2.4; }
+    if (this.boss) this._bossBehavior(dt, dist, player);
+    else {
+      // attack on contact
+      this.attackTimer -= dt;
+      if (dist <= def.reach + player.radius + 0.5 && this.attackTimer <= 0) {
+        this.attackTimer = def.attackCd;
+        player.takeDamage((def.damage + this.mgr.wave * 0.5) * this._enrageDmg, this.pos);
+        this.mgr.audio.enemyAttack(this.mgr.panFor(this.pos));
+        if (this.parts.armL) { this.parts.armL.rotation.x = -2.4; this.parts.armR.rotation.x = -2.4; }
+      }
+    }
+
+    // enrage beacon: pulse + keep the marker floating (billboard-ish orb spin)
+    if (this._beacon) {
+      const pulse = 0.4 + Math.abs(Math.sin(this.phase * 1.5)) * 0.4;
+      this._beacon.material.opacity = pulse;
+      this._beacon.scale.x = this._beacon.scale.z = 1 + Math.sin(this.phase * 2) * 0.15;
+      if (this._orb) { this._orb.rotation.y += dt * 3; this._orb.position.y = this.def.height + 0.9 + Math.sin(this.phase * 2) * 0.15; }
+      this.flash = Math.max(this.flash, 0.25 + Math.abs(Math.sin(this.phase * 1.5)) * 0.3);
     }
 
     // occasional growl
@@ -488,6 +626,47 @@ export class Enemy {
 
     this.flash = damp(this.flash, 0, 9, dt);
     this._applyFlash();
+  }
+
+  // Boss: telegraphed ground-slam AoE + periodic add-spawns.
+  _bossBehavior(dt, dist, player) {
+    const def = this.def;
+    const p = this.parts;
+    if (this._slamT >= 0) {
+      // winding up / slamming
+      this._slamT += dt;
+      const wind = 0.65;
+      if (this._slamT < wind) {
+        // rear the fists overhead
+        const e = this._slamT / wind;
+        if (p.armL) { p.armL.rotation.x = -2.6 * e; p.armR.rotation.x = -2.6 * e; }
+      } else if (this._slamT < wind + 0.12) {
+        // the slam frame: fists down, AoE shock
+        if (p.armL) { p.armL.rotation.x = 0.4; p.armR.rotation.x = 0.4; }
+        if (!this._slammed) {
+          this._slammed = true;
+          const gp = new THREE.Vector3(this.pos.x, this.pos.y + 0.2, this.pos.z);
+          this.mgr.fx.shockwave(gp, 0xff6622, 8, 0.5);
+          this.mgr.fx.addTrauma(0.6);
+          this.mgr.audio.bossSlam(this.mgr.panFor(this.pos));
+          const slamR = def.reach + 3.5;
+          if (dist < slamR) player.takeDamage(def.damage, this.pos);
+        }
+      } else {
+        this._slamT = -1; this._slammed = false;
+        this.attackTimer = def.attackCd;
+      }
+    } else {
+      this.attackTimer -= dt;
+      if (dist <= def.reach + player.radius && this.attackTimer <= 0) { this._slamT = 0; this._slammed = false; }
+    }
+    // periodically call in reinforcements
+    this._addCd -= dt;
+    if (this._addCd <= 0) {
+      this._addCd = rand(7, 10);
+      if (this.mgr.aliveCount() < 10) this.mgr.spawnAdds(this.pos, 2);
+      this.mgr.audio.growl(this.mgr.panFor(this.pos));
+    }
   }
 
   _animate(dt, dist) {
@@ -629,7 +808,9 @@ export class EnemyManager {
     this.enemies = [];
     this.wave = 0; this.score = 0; this.kills = 0;
     this.spawnQueue = []; this.spawnTimer = 0; this.betweenWaves = 0; this.active = false;
-    this.onScore = null; this.onKill = null; this.onWaveStart = null; this.onWaveCleared = null; this.onCountChange = null;
+    this.boss = null; this.isBossWave = false;
+    this.maxConcurrent = 6; this.spawnInterval = 0.28;   // pressure spawner
+    this.onScore = null; this.onKill = null; this.onWaveStart = null; this.onWaveCleared = null; this.onCountChange = null; this.onBoss = null;
   }
 
   reset() {
@@ -640,32 +821,72 @@ export class EnemyManager {
     }
     this.enemies = []; this.wave = 0; this.score = 0; this.kills = 0;
     this.spawnQueue = []; this.betweenWaves = 0; this.active = false;
+    this.boss = null; this.isBossWave = false;
   }
+
+  bossWaveFor(n) { return n > 0 && n % 5 === 0; }
 
   start() { this.active = true; this.betweenWaves = 2.0; }
 
   _startWave(n) {
     this.wave = n;
-    const count = Math.min(6 + n * 3, 42);
     const hpScale = 1 + (n - 1) * 0.14;
     const speedScale = 1 + (n - 1) * 0.03;
-    // weighted spawn pool, unlocking + ramping variety as waves climb
-    const pool = [['husk', Math.max(0.5, 2.4 - n * 0.18)]];
-    if (n >= 1) pool.push(['stalker', clamp(0.4 + n * 0.12, 0, 1.6)]);
-    if (n >= 2) pool.push(['wisp', clamp(0.2 + (n - 2) * 0.1, 0, 0.9)]);
-    if (n >= 3) pool.push(['juggernaut', clamp(0.15 + (n - 3) * 0.06, 0, 0.6)]);
-    if (n >= 4) pool.push(['bloater', clamp(0.2 + (n - 4) * 0.08, 0, 0.8)]);
-    const total = pool.reduce((a, b) => a + b[1], 0);
-
     this.spawnQueue = [];
-    for (let i = 0; i < count; i++) {
-      let r = Math.random() * total, t = pool[0][0];
-      for (const [name, w] of pool) { if (r < w) { t = name; break; } r -= w; }
-      this.spawnQueue.push({ t, hpScale, speedScale, delay: this.spawnQueue.length * rand(0.25, 0.55) });
+    this.isBossWave = this.bossWaveFor(n);
+
+    if (this.isBossWave) {
+      // a boss plus a light escort. The boss hp climbs each boss encounter.
+      const bossNum = n / 5;
+      const bossHp = 1 + (bossNum - 1) * 0.7;
+      this.spawnQueue.push({ t: 'colossus', hpScale: bossHp, speedScale: 1, boss: true });
+      const escort = 3 + bossNum;
+      for (let i = 0; i < escort; i++) {
+        this.spawnQueue.push({ t: Math.random() < 0.5 ? 'stalker' : 'husk', hpScale, speedScale });
+      }
+      // fewer at once during the boss so the boss reads clearly
+      this.maxConcurrent = 6;
+      this.spawnInterval = 0.7;
+    } else {
+      const count = Math.min(9 + n * 3, 50);
+      // weighted spawn pool, unlocking + ramping variety as waves climb
+      const pool = [['husk', Math.max(0.5, 2.4 - n * 0.18)]];
+      if (n >= 1) pool.push(['stalker', clamp(0.4 + n * 0.12, 0, 1.6)]);
+      if (n >= 2) pool.push(['wisp', clamp(0.2 + (n - 2) * 0.1, 0, 0.9)]);
+      if (n >= 3) pool.push(['juggernaut', clamp(0.15 + (n - 3) * 0.06, 0, 0.6)]);
+      if (n >= 4) pool.push(['bloater', clamp(0.2 + (n - 4) * 0.08, 0, 0.8)]);
+      const total = pool.reduce((a, b) => a + b[1], 0);
+      for (let i = 0; i < count; i++) {
+        let r = Math.random() * total, t = pool[0][0];
+        for (const [name, w] of pool) { if (r < w) { t = name; break; } r -= w; }
+        this.spawnQueue.push({ t, hpScale, speedScale });
+      }
+      // keep constant pressure: more enemies on you at once, refilled as you kill
+      this.maxConcurrent = Math.min(6 + n, 15);
+      this.spawnInterval = Math.max(0.12, 0.3 - n * 0.02);
     }
     this.spawnTimer = 0;
-    if (this.onWaveStart) this.onWaveStart(n);
+    if (this.onWaveStart) this.onWaveStart(n, this.isBossWave);
     this.audio.waveStart();
+  }
+
+  // spawn near a point (boss reinforcements) instead of the arena edge
+  spawnAdds(nearPos, count) {
+    for (let i = 0; i < count; i++) {
+      const a = rand(0, Math.PI * 2), r = rand(4, 8);
+      let x = nearPos.x + Math.cos(a) * r, z = nearPos.z + Math.sin(a) * r;
+      this.clampPoint(x, z);
+      const t = Math.random() < 0.6 ? 'stalker' : 'husk';
+      const e = new Enemy(this, t, new THREE.Vector3(this._cx, 0, this._cz), 1 + this.wave * 0.05, 1);
+      this.enemies.push(e);
+    }
+    if (this.onCountChange) this.onCountChange(this.aliveCount());
+  }
+
+  clampPoint(x, z) {
+    const dr = Math.hypot(x, z), b = this.boundary - 2;
+    if (dr > b) { const k = b / dr; x *= k; z *= k; }
+    this._cx = x; this._cz = z; return this;
   }
 
   spawnNow(item) {
@@ -678,6 +899,7 @@ export class EnemyManager {
     const pos = new THREE.Vector3(x, this.terrain.height(x, z), z);
     const e = new Enemy(this, item.t, pos, item.hpScale, item.speedScale);
     this.enemies.push(e);
+    if (item.boss) { this.boss = e; if (this.onBoss) this.onBoss('spawn', e); }
     if (this.onCountChange) this.onCountChange(this.aliveCount());
   }
 
@@ -692,9 +914,22 @@ export class EnemyManager {
         this.betweenWaves -= dt;
         if (this.betweenWaves <= 0) this._startWave(this.wave + 1);
       }
+      // pressure spawner: keep ~maxConcurrent enemies alive, refilling as you kill
       if (this.spawnQueue.length > 0) {
-        this.spawnTimer += dt;
-        while (this.spawnQueue.length && this.spawnTimer >= this.spawnQueue[0].delay) this.spawnNow(this.spawnQueue.shift());
+        this.spawnTimer -= dt;
+        let budget = 3;
+        while (this.spawnQueue.length && this.aliveCount() < this.maxConcurrent && this.spawnTimer <= 0 && budget-- > 0) {
+          this.spawnNow(this.spawnQueue.shift());
+          this.spawnTimer = this.spawnInterval;
+        }
+      }
+      // enrage the lone straggler so it hunts you (and is easy to find)
+      if (this.spawnQueue.length === 0 && this.wave > 0 && this.aliveCount() === 1) {
+        for (const e of this.enemies) { if (e.alive && !e.boss && !e.enraged) { e.enrage(); break; } }
+      }
+      // live boss health bar
+      if (this.boss && this.onBoss) {
+        if (this.boss.alive) this.onBoss('update', this.boss);
       }
     }
     const snap = this.enemies.slice();
@@ -750,6 +985,7 @@ export class EnemyManager {
   _onKilled(e, isHead) {
     this.kills++;
     const pos = new THREE.Vector3(e.pos.x, this.terrain.height(e.pos.x, e.pos.z) + e.def.height * 0.6, e.pos.z);
+    if (e.boss) { const b = this.boss; this.boss = null; if (this.onBoss) this.onBoss('dead', b || e); }
     if (this.onKill) this.onKill(e, isHead, pos);
     if (this.onCountChange) this.onCountChange(this.aliveCount());
   }

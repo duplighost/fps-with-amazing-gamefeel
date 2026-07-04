@@ -121,8 +121,28 @@ signature-coloured blood, and its own gait and behaviour:
 - **Bloater** — a bulbous pustular sack glowing orange. Waddles in and **ruptures**
   on death in a second, larger burst.
 
-The roster unlocks and its mix ramps as the waves climb. Each wave is bigger than
-the last — clear it for a bonus, brace for the next.
+The roster unlocks and its mix ramps as the waves climb. A **pressure spawner**
+keeps a steady crowd bearing down on you and refills it as you cut them down, so
+the action never sags into a lull. When only one enemy is left it goes **berserk**
+— faster, hitting harder, charging straight at you, and marked by a tall glowing
+beacon you can spot across the whole field, so you never have to hunt the last
+straggler.
+
+## Bosses
+
+![the colossus](docs/boss.png)
+
+Every fifth wave the horde parts for a **boss**:
+
+- **THE COLOSSUS** — a five-metre molten titan with an exposed glowing core, horns
+  and shoulder spikes, wrapped in lava cracks. It stomps the ground (each footfall
+  shakes the screen), winds up a telegraphed **ground-slam** with an area shockwave,
+  and periodically **calls in reinforcements**. A dedicated health bar tracks it.
+
+Dodge the slam with your dash i-frames, chip it down (its high health shrugs off a
+finisher), and when it falls it goes out in a chain of explosions, a slow-mo beat,
+a huge score payout, and a pile of guaranteed ammo + health. Its health scales up
+each time you meet one.
 
 ## Structure
 

@@ -71,6 +71,11 @@ export class HUD {
       <div id="banner"><div id="banner-main"></div><div id="banner-sub"></div></div>
       <div id="low-ammo">RELOAD</div>
 
+      <div id="boss-bar">
+        <div id="boss-name">THE COLOSSUS</div>
+        <div id="boss-track"><div id="boss-fill"></div></div>
+      </div>
+
       <div id="touch-controls">
         <div id="move-stick"><div id="move-knob"></div></div>
         <button id="touch-fire" class="tbtn">FIRE</button>
@@ -134,6 +139,9 @@ export class HUD {
       popupLayer: q('#popup-layer'),
       combo: q('#combo'),
       comboNum: q('#combo-num'),
+      bossBar: q('#boss-bar'),
+      bossName: q('#boss-name'),
+      bossFill: q('#boss-fill'),
       bestLine: q('#best-line'),
       touchControls: q('#touch-controls'),
       moveStick: q('#move-stick'),
@@ -220,6 +228,15 @@ export class HUD {
   dashFx() { this.dashLineT = 1; }
   // white/gold execution pop
   finisherFx() { this.finisherT = 1; }
+
+  // boss health bar
+  showBoss(name) {
+    this.el.bossName.textContent = name || 'BOSS';
+    this.el.bossFill.style.width = '100%';
+    this.el.bossBar.classList.add('show');
+  }
+  updateBoss(frac) { this.el.bossFill.style.width = (clamp01(frac) * 100).toFixed(1) + '%'; }
+  hideBoss() { this.el.bossBar.classList.remove('show'); }
 
   setScore(n) { this.el.score.textContent = n.toLocaleString(); }
   setWave(n) { this.el.wave.textContent = n; }

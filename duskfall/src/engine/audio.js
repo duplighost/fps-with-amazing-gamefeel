@@ -198,6 +198,38 @@ export class Audio {
     this._noiseBurst({ dur: 0.4, vol: 0.06, type: 'lowpass', freq: 400, dest });
   }
 
+  enrage(pan = 0) {
+    // the straggler goes berserk: a rising, distorted roar
+    const dest = this._panned(pan);
+    this._tone({ freq: 90, freq2: 260, dur: 0.5, vol: 0.34, type: 'sawtooth', dest });
+    this._tone({ freq: 140, freq2: 320, dur: 0.4, vol: 0.2, type: 'square', dest });
+    this._noiseBurst({ dur: 0.4, vol: 0.2, type: 'bandpass', freq: 600, sweepTo: 2200, q: 0.8, dest });
+  }
+
+  bossIntro() {
+    // cinematic arrival: a deep sub boom, a rising brass-ish swell, and a hit
+    this._tone({ freq: 55, freq2: 34, dur: 1.2, vol: 0.4, type: 'sine' });
+    this._tone({ freq: 110, freq2: 220, dur: 0.9, vol: 0.3, type: 'sawtooth' });
+    this._noiseBurst({ dur: 0.7, vol: 0.22, type: 'lowpass', freq: 300, sweepTo: 1400 });
+    setTimeout(() => { this._tone({ freq: 82, freq2: 41, dur: 0.8, vol: 0.34, type: 'sawtooth' }); this._noiseBurst({ dur: 0.2, vol: 0.3, type: 'lowpass', freq: 400, sweepTo: 80 }); }, 520);
+  }
+
+  bossSlam(pan = 0) {
+    const dest = this._panned(pan);
+    this._noiseBurst({ dur: 0.22, vol: 0.5, type: 'lowpass', freq: 800, sweepTo: 60, dest });
+    this._tone({ freq: 90, freq2: 34, dur: 0.3, vol: 0.4, type: 'sine', dest });
+    this._tone({ freq: 160, freq2: 50, dur: 0.14, vol: 0.24, type: 'square', dest });
+  }
+
+  bossDeath() {
+    // a drawn-out collapse: chained explosions + a descending groan
+    [0, 140, 300, 480].forEach((d, i) => setTimeout(() => {
+      this._noiseBurst({ dur: 0.4, vol: 0.4, type: 'lowpass', freq: 700 - i * 120, sweepTo: 70 });
+      this._tone({ freq: 120 / (1 + i * 0.3), freq2: 40, dur: 0.6, vol: 0.32, type: 'sawtooth' });
+    }, d));
+    setTimeout(() => this._tone({ freq: 523, freq2: 784, dur: 0.5, vol: 0.24, type: 'triangle' }), 650);
+  }
+
   enemyShoot(pan = 0) {
     const dest = this._panned(pan);
     this._noiseBurst({ dur: 0.1, vol: 0.3, type: 'bandpass', freq: 1400, sweepTo: 500, q: 1.5, dest });

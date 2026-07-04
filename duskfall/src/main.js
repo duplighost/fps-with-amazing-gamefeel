@@ -139,11 +139,43 @@ class Game {
       }
     };
     this.enemies.onCountChange = (n) => this.hud.setEnemies(n);
-    this.enemies.onWaveStart = (n) => { this.hud.setWave(n); this.hud.banner('WAVE ' + n, n % 5 === 0 ? 'they keep coming…' : 'incoming', '#ffce7a'); };
+    this.enemies.onWaveStart = (n, isBoss) => {
+      this.hud.setWave(n);
+      if (isBoss) this.hud.banner('⚠  BOSS  ⚠', 'THE COLOSSUS awakens', '#ff6a3a');
+      else this.hud.banner('WAVE ' + n, (n % 5 === 4) ? 'brace — a boss looms next' : 'incoming', '#ffce7a');
+    };
     this.enemies.onWaveCleared = (n) => {
       const bonus = n * 100;
       this.score += bonus; this.hud.setScore(this.score);
       this.hud.banner('WAVE ' + n + ' CLEARED', '+' + bonus + ' bonus', '#b6f36a');
+    };
+    this.enemies.onBoss = (event, boss) => {
+      if (event === 'spawn') {
+        this.hud.showBoss(boss.def.name || 'BOSS');
+        this.audio.bossIntro();
+        this.fx.addTrauma(0.5);
+      } else if (event === 'update') {
+        this.hud.updateBoss(boss.health / boss.maxHealth);
+      } else if (event === 'dead') {
+        this.hud.hideBoss();
+        const bonus = 2000;
+        this.score += bonus; this.hud.setScore(this.score);
+        this.hud.banner('COLOSSUS DOWN', '+' + bonus + ' bonus', '#b6f36a');
+        this.audio.bossDeath();
+        this.fx.addSlowmo(0.12); this.fx.addTrauma(0.85);
+        // spectacle: chained explosions + a guaranteed loot pile
+        const gy = this.world.terrain.height(boss.pos.x, boss.pos.z);
+        const c = new THREE.Vector3(boss.pos.x, gy + 2, boss.pos.z);
+        for (let i = 0; i < 6; i++) {
+          const off = new THREE.Vector3((Math.random() - 0.5) * 3.5, Math.random() * 3.5, (Math.random() - 0.5) * 3.5);
+          this.fx.deathBurst(c.clone().add(off), 0xff6a22);
+          this.fx.shockwave(c.clone().add(off), 0xffb060, 5, 0.5);
+        }
+        for (let i = 0; i < 6; i++) {
+          const j = new THREE.Vector3((Math.random() - 0.5) * 5, 0, (Math.random() - 0.5) * 5);
+          this.pickups.spawn(i % 2 === 0 ? 'ammo' : 'health', new THREE.Vector3(boss.pos.x, 0, boss.pos.z).add(j));
+        }
+      }
     };
 
     this.input.onLockChange = (locked) => {
@@ -198,6 +230,7 @@ class Game {
     this.weapons.reset();
     this.enemies.reset();
     this.pickups.reset();
+    this.hud.hideBoss();
     this._dashHitSet.clear();
     this.fx.trauma = 0; this.fx.hitstop = 0; this.fx.slowmo = 1;
     this.health = MAX_HEALTH; this.invuln = 0; this.lastDamage = this.time;
