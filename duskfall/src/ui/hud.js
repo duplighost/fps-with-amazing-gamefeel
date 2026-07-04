@@ -31,6 +31,9 @@ export class HUD {
     this.root.innerHTML = `
       <div id="vignette"></div>
       <div id="timewarp"></div>
+      <div id="ads-vignette"></div>
+      <div id="dash-lines"></div>
+      <div id="finisher-flash"></div>
       <div id="dmg-vignette"></div>
       <div id="hit-flash"></div>
       <div id="hit-dir-layer"></div>
@@ -54,7 +57,7 @@ export class HUD {
 
       <div id="hud-bottom-right">
         <div id="weapon-name">CARBINE</div>
-        <div id="ammo"><span id="ammo-mag">30</span><span id="ammo-sep">/</span><span id="ammo-reserve">270</span></div>
+        <div id="ammo"><span id="ammo-mag">96</span><span id="ammo-sep">/</span><span id="ammo-reserve">160</span></div>
         <div id="reload-bar"><div id="reload-fill"></div></div>
       </div>
 
@@ -72,7 +75,8 @@ export class HUD {
         <div id="move-stick"><div id="move-knob"></div></div>
         <button id="touch-fire" class="tbtn">FIRE</button>
         <button id="touch-jump" class="tbtn small">JUMP</button>
-        <button id="touch-reload" class="tbtn small">RLD</button>
+        <button id="touch-dash" class="tbtn small">DASH</button>
+        <button id="touch-aim" class="tbtn small">AIM</button>
         <button id="touch-pause" class="tbtn pause">❚❚</button>
       </div>
 
@@ -84,10 +88,11 @@ export class HUD {
           <div id="overlay-body"></div>
           <button id="play-btn">CLICK TO PLAY</button>
           <div id="controls">
-            <div><b>WASD</b> move</div><div><b>SPACE</b> jump</div>
-            <div><b>SHIFT</b> sprint</div><div><b>CTRL</b> crouch / slide</div>
-            <div><b>MOUSE</b> look · <b>L-CLICK</b> fire</div><div><b>R</b> reload</div>
+            <div><b>WASD</b> move (always running)</div><div><b>SPACE</b> jump · ✕2 double</div>
+            <div><b>SHIFT / F</b> dash · strike</div><div><b>CTRL</b> crouch / slide</div>
+            <div><b>L-CLICK</b> fire</div><div><b>R-CLICK</b> aim (iron sights)</div>
             <div><b>1 / 2 / WHEEL</b> weapons</div><div><b>ESC</b> pause</div>
+            <div class="wide"><b>no reload</b> — dash-strike to finish the weak; grab the ammo &amp; health they drop</div>
           </div>
         </div>
       </div>`;
@@ -100,10 +105,14 @@ export class HUD {
       healthNum: q('#health-num'),
       healthWrap: q('#health-wrap'),
       weaponName: q('#weapon-name'),
+      ammo: q('#ammo'),
       ammoMag: q('#ammo-mag'),
       ammoReserve: q('#ammo-reserve'),
       reloadBar: q('#reload-bar'),
       reloadFill: q('#reload-fill'),
+      adsVignette: q('#ads-vignette'),
+      dashLines: q('#dash-lines'),
+      finisherFlash: q('#finisher-flash'),
       score: q('#score'),
       wave: q('#wave'),
       enemies: q('#enemies'),
@@ -125,17 +134,19 @@ export class HUD {
       popupLayer: q('#popup-layer'),
       combo: q('#combo'),
       comboNum: q('#combo-num'),
-      grindInd: q('#grind-ind'),
-      grindSpd: q('#grind-spd'),
       bestLine: q('#best-line'),
       touchControls: q('#touch-controls'),
       moveStick: q('#move-stick'),
       moveKnob: q('#move-knob'),
       touchFire: q('#touch-fire'),
       touchJump: q('#touch-jump'),
-      touchReload: q('#touch-reload'),
+      touchDash: q('#touch-dash'),
+      touchAim: q('#touch-aim'),
       touchPause: q('#touch-pause'),
     };
+    this.dashLineT = 0;
+    this.finisherT = 0;
+    this.aimT = 0;
   }
 
   // Reveal the on-screen touch controls (mobile).
@@ -182,26 +193,40 @@ export class HUD {
 
   setAmmo(a) {
     this.el.weaponName.textContent = a.name;
-    this.el.ammoMag.textContent = a.mag;
-    this.el.ammoReserve.textContent = a.reserve > 900 ? '∞' : a.reserve;
-    this.el.ammoMag.classList.toggle('empty', a.mag === 0);
-    this.el.lowAmmo.classList.toggle('show', a.mag === 0 && !a.reloading);
-    this.reloading = a.reloading;
-    this.el.reloadBar.classList.toggle('show', a.reloading);
+    this.el.ammoMag.textContent = a.ammo;
+    this.el.ammoReserve.textContent = a.capacity;
+    const out = a.ammo <= 0;
+    const low = a.ammo <= Math.max(6, a.capacity * 0.12);
+    this.el.ammoMag.classList.toggle('empty', out);
+    this.el.lowAmmo.classList.toggle('show', low);
+    this.el.lowAmmo.textContent = out ? 'NO AMMO' : 'LOW AMMO';
   }
 
-  setReloadProgress(t) {
-    this.el.reloadFill.style.width = (clamp01(t) * 100) + '%';
+  // brief flash of the ammo readout when a drop tops you up
+  ammoFlash() {
+    this.el.ammo.classList.remove('gain');
+    void this.el.ammo.offsetWidth;
+    this.el.ammo.classList.add('gain');
   }
+
+  // ADS blend (0..1): darken the edges and fade the reticle
+  setAim(t) {
+    this.aimT = t;
+    this.el.adsVignette.style.opacity = (t * 0.9).toFixed(3);
+    this.el.crosshair.classList.toggle('ads', t > 0.5);
+  }
+
+  // flash the radial speed-lines when a dash launches
+  dashFx() { this.dashLineT = 1; }
+  // white/gold execution pop
+  finisherFx() { this.finisherT = 1; }
 
   setScore(n) { this.el.score.textContent = n.toLocaleString(); }
   setWave(n) { this.el.wave.textContent = n; }
   setEnemies(n) { this.el.enemies.textContent = n; }
 
-  setGrind(active, speed) {
-    this.el.grindInd.classList.toggle('show', active);
-    if (active) this.el.grindSpd.textContent = Math.round(speed * 3.6); // show as km/h-ish for flavor
-  }
+  // Reset the on-screen combo meter when the chain is broken (e.g. taking damage).
+  breakCombo() { this.combo = 0; this.el.combo.classList.remove('show'); }
 
   // Visual time-warp cue: a blue edge tint that deepens as time slows (slowmo 1
   // = normal, lower = slower). Makes the kill slow-mo unmistakable.
@@ -277,6 +302,18 @@ export class HUD {
     });
   }
 
+  // A generic floating world-anchored label (e.g. "FINISHER", "+AMMO", "+25 HP").
+  popText(worldPos, text, camera, cls = '') {
+    const el = document.createElement('div');
+    el.className = 'popup ' + cls;
+    el.textContent = text;
+    this.el.popupLayer.appendChild(el);
+    this.popups.push({
+      el, life: 1.3, maxLife: 1.3, world: worldPos.clone().add(new THREE.Vector3(0, 1.5, 0)),
+      vy: 1.1, drift: 0, camera,
+    });
+  }
+
   banner(main, sub = '', color = '#7df9ff') {
     this.el.bannerMain.textContent = main;
     this.el.bannerSub.textContent = sub;
@@ -343,6 +380,12 @@ export class HUD {
 
     this.hitFlash = Math.max(0, this.hitFlash - dt * 5);
     this.killFlash = Math.max(0, this.killFlash - dt * 3);
+
+    // dash speed-lines + finisher flash decay
+    this.dashLineT = Math.max(0, this.dashLineT - dt * 3.6);
+    this.el.dashLines.style.opacity = this.dashLineT.toFixed(3);
+    this.finisherT = Math.max(0, this.finisherT - dt * 2.2);
+    this.el.finisherFlash.style.opacity = this.finisherT.toFixed(3);
 
     // combined damage + low-health red vignette, all driven from JS
     const lowT = clamp01(1 - this.health / (this.maxHealth * 0.4));

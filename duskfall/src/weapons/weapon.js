@@ -7,20 +7,25 @@
 import * as THREE from 'three';
 import { clamp, clamp01, damp, rand, randSign, lerp } from '../engine/math.js';
 
+// No reloads (DOOM-style): each weapon draws from one ammo pool that only
+// refills from enemy drops and dash finishers. `capacity` caps the pool, `start`
+// is what you spawn with. `ads` is the sighted viewmodel position.
 export const WEAPONS = {
   rifle: {
     kind: 'rifle', name: 'CARBINE', auto: true, damage: 26, headMult: 2.2,
-    fireInterval: 0.092, mag: 30, reserve: 270, reloadTime: 1.7,
+    fireInterval: 0.092, capacity: 160, start: 96, drop: 20, finisher: 28,
     recoilPitch: 0.019, recoilYaw: 0.010, pellets: 1,
     spreadBase: 0.0026, spreadMove: 0.018, spreadBloom: 0.0052, spreadMax: 0.05,
     range: 280, fovPunch: 1.0, shake: 0.06, tracer: 0xffe08a, sound: 'gunshot',
+    ads: new THREE.Vector3(-0.02, -0.22, -0.44),
   },
   shotgun: {
     kind: 'shotgun', name: 'SHOTGUN', auto: false, damage: 13, headMult: 1.6,
-    fireInterval: 0.78, mag: 6, reserve: 54, reloadTime: 2.4,
+    fireInterval: 0.78, capacity: 40, start: 24, drop: 5, finisher: 8,
     recoilPitch: 0.065, recoilYaw: 0.028, pellets: 11,
     spreadBase: 0.062, spreadMove: 0.02, spreadBloom: 0.0, spreadMax: 0.1,
     range: 44, fovPunch: 5.0, shake: 0.36, tracer: 0xffcf8a, sound: 'shotgun',
+    ads: new THREE.Vector3(-0.02, -0.23, -0.46),
   },
 };
 
@@ -48,7 +53,7 @@ export class Weapons {
       m.visible = false;
       this.viewScene.add(m);
       this.models[id] = m;
-      this.ammo[id] = { mag: WEAPONS[id].mag, reserve: WEAPONS[id].reserve };
+      this.ammo[id] = WEAPONS[id].start;   // single ammo pool per weapon, no reload
     }
 
     this.current = 'rifle';
@@ -57,10 +62,9 @@ export class Weapons {
     this.model.visible = true;
 
     this.fireTimer = 0;
-    this.reloadTimer = 0;
-    this.reloading = false;
     this.switchTimer = 0;
     this.spread = this.def.spreadBase;
+    this.aimT = 0;               // ADS blend, read from the camera each frame
 
     // animated viewmodel offsets
     this.pos = REST.clone();
@@ -88,19 +92,13 @@ export class Weapons {
   }
 
   reset() {
-    for (const id of ORDER) {
-      this.ammo[id] = { mag: WEAPONS[id].mag, reserve: WEAPONS[id].reserve };
-    }
+    for (const id of ORDER) this.ammo[id] = WEAPONS[id].start;
     this.switchTo('rifle', true);
-    this.reloading = false;
-    this.reloadTimer = 0;
     this._emitAmmo();
   }
 
   switchTo(id, instant = false) {
     if (!WEAPONS[id] || (id === this.current && !instant)) return;
-    this.reloading = false;
-    this.reloadTimer = 0;
     this.model.visible = false;
     this.current = id;
     this.def = WEAPONS[id];
@@ -119,71 +117,71 @@ export class Weapons {
     this.switchTo(ORDER[n]);
   }
 
-  startReload() {
-    const a = this.ammo[this.current];
-    if (this.reloading || a.mag >= this.def.mag || a.reserve <= 0) return;
-    this.reloading = true;
-    this.reloadTimer = this.def.reloadTime;
-    this.ctx.audio.reloadOut();
-  }
-
   update(dt, ctrl, input) {
     this.fireTimer = Math.max(0, this.fireTimer - dt);
     this.switchTimer = Math.max(0, this.switchTimer - dt);
     this.raiseT = damp(this.raiseT, 1, 12, dt);
+    this.aimT = this.ctx.cam.aimT || 0;
 
-    // input: switch / reload
+    // input: switch weapons
     if (input.wasPressed('weapon1')) this.switchTo('rifle');
     if (input.wasPressed('weapon2')) this.switchTo('shotgun');
     const wheel = input.consumeWheel();
     if (wheel !== 0) this.cycle(wheel);
-    if (input.wasPressed('reload')) this.startReload();
 
-    // reload resolution
-    if (this.reloading) {
-      this.reloadTimer -= dt;
-      if (this.reloadTimer <= 0) {
-        const a = this.ammo[this.current];
-        const need = this.def.mag - a.mag;
-        const take = Math.min(need, a.reserve);
-        a.mag += take;
-        a.reserve -= take;
-        this.reloading = false;
-        this.ctx.audio.reloadDone();
-        this._emitAmmo();
-      }
-    }
-
-    // firing
+    // firing — no reload; draws straight from the ammo pool
     const wantFire = this.def.auto ? input.isDown('fire') : input.wasPressed('fire');
     if (wantFire && this.fireTimer <= 0 && this.switchTimer <= 0) {
-      const a = this.ammo[this.current];
-      if (this.reloading) {
-        // allow reload cancel by firing if there's ammo
-        if (a.mag > 0) this.reloading = false; else this.ctx.audio.dryFire();
-      }
-      if (a.mag > 0 && !this.reloading) {
+      if (this.ammo[this.current] > 0) {
         this._fire(ctrl);
-      } else if (a.mag === 0 && !this.reloading) {
-        // out of ammo: auto-reload even while holding the trigger
-        if (input.wasPressed('fire')) this.ctx.audio.dryFire();
-        this.startReload();
+      } else if (input.wasPressed('fire')) {
+        // empty: dry click, and hop to the other weapon if it still has rounds
+        this.ctx.audio.dryFire();
+        if (!this._autoSwitch()) this.fireTimer = 0.18;
       }
     }
 
-    // spread = base + movement/air penalty, with firing bloom decaying back down
+    // spread = base + movement/air penalty (tightened while sighted), bloom decays
     const movePenalty = clamp01(ctrl.horizSpeed / 10) * this.def.spreadMove + (ctrl.onGround ? 0 : 0.025);
-    const target = this.def.spreadBase + movePenalty;
+    const target = (this.def.spreadBase + movePenalty) * lerp(1, 0.28, this.aimT);
     this.spread = Math.max(target, damp(this.spread, target, 7, dt));
 
     this._animate(dt, ctrl);
     this._emitSpread();
   }
 
+  // Switch to any other weapon that still has ammo. Returns true if it switched.
+  _autoSwitch() {
+    for (const id of ORDER) {
+      if (id !== this.current && this.ammo[id] > 0) { this.switchTo(id); return true; }
+    }
+    return false;
+  }
+
+  // Pickup top-up for both weapons (mult scales the amount). Returns true if any
+  // pool actually gained rounds (so a full player doesn't vacuum up a pickup).
+  addAmmo(mult = 1) {
+    let added = false;
+    for (const id of ORDER) {
+      const before = this.ammo[id];
+      this.ammo[id] = Math.min(WEAPONS[id].capacity, before + Math.round(WEAPONS[id].drop * mult));
+      if (this.ammo[id] > before) added = true;
+    }
+    this._emitAmmo();
+    return added;
+  }
+
+  // A chunky guaranteed reward for a dash finisher (the aggressive "chainsaw" loop).
+  grantFinisherAmmo() {
+    for (const id of ORDER) this.ammo[id] = Math.min(WEAPONS[id].capacity, this.ammo[id] + WEAPONS[id].finisher);
+    this._emitAmmo();
+  }
+
+  hasAnyAmmo() { return ORDER.some((id) => this.ammo[id] > 0); }
+
   _fire(ctrl) {
     const def = this.def;
-    const a = this.ammo[this.current];
-    a.mag--;
+    this.ammo[this.current]--;
     this.fireTimer = def.fireInterval;
 
     const cam = this.ctx.cam;
@@ -252,9 +250,10 @@ export class Weapons {
     this.sway.x = damp(this.sway.x, swayTargetX, 10, dt);
     this.sway.y = damp(this.sway.y, swayTargetY, 10, dt);
 
-    // bob synced with movement
+    // bob synced with movement (suppressed while sighted)
+    const aimT = this.aimT;
     this.bobPhase += ctrl.horizSpeed * dt * 1.5;
-    const bobAmt = clamp01(ctrl.horizSpeed / 10.5) * (ctrl.onGround ? 1 : 0.2);
+    const bobAmt = clamp01(ctrl.horizSpeed / 10.5) * (ctrl.onGround ? 1 : 0.2) * (1 - aimT * 0.9);
     const bobX = Math.cos(this.bobPhase) * 0.012 * bobAmt;
     const bobY = Math.abs(Math.sin(this.bobPhase)) * 0.016 * bobAmt;
 
@@ -262,28 +261,23 @@ export class Weapons {
     this.kick = damp(this.kick, 0, 12, dt);
     this.kickRot = damp(this.kickRot, 0, 11, dt);
 
-    // raise / lower on switch
-    const lower = (1 - this.raiseT) * 0.5;
-    // reload dip
-    let reloadDip = 0, reloadRot = 0;
-    if (this.reloading) {
-      const t = 1 - clamp01(this.reloadTimer / def.reloadTime);
-      const e = Math.sin(t * Math.PI);
-      reloadDip = e * 0.42;
-      reloadRot = e * 0.7;
-    }
+    // raise / lower on switch + a quick dip while dashing
+    const lower = (1 - this.raiseT) * 0.5 + (ctrl.isDashing() ? 0.22 : 0);
 
     const target = REST.clone();
     target.x += this.sway.x + bobX;
-    target.y += this.sway.y + bobY - lower - reloadDip;
+    target.y += this.sway.y + bobY - lower;
     target.z += this.kick;
+    // blend toward the sighted (ADS) pose
+    target.lerp(def.ads, aimT);
     this.pos.lerp(target, 1 - Math.exp(-18 * dt));
 
     this.model.position.copy(this.pos);
+    const rotScale = 1 - aimT * 0.7;   // steadier hold while sighted (recoil stays)
     this.model.rotation.set(
-      this.kickRot + reloadRot * 0.6 + this.sway.y * 1.5,
-      -this.sway.x * 2 + reloadRot * 0.4,
-      this.sway.x * 1.5 + (ctrl._sliding ? -0.12 : 0),
+      this.kickRot + this.sway.y * 1.5 * rotScale,
+      -this.sway.x * 2 * rotScale,
+      (this.sway.x * 1.5 + (ctrl._sliding ? -0.12 : 0)) * rotScale,
       'YXZ'
     );
 
@@ -304,8 +298,7 @@ export class Weapons {
 
   _emitAmmo() {
     if (this.onAmmoChange) {
-      const a = this.ammo[this.current];
-      this.onAmmoChange({ name: this.def.name, mag: a.mag, reserve: a.reserve, reloading: this.reloading });
+      this.onAmmoChange({ name: this.def.name, ammo: this.ammo[this.current], capacity: this.def.capacity, kind: this.def.kind });
     }
   }
   _emitSpread() {

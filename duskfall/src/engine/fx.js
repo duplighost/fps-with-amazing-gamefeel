@@ -206,6 +206,19 @@ export class FX {
       this.flashLights.push({ light: l, life: 0, maxLife: 0.06, power: 8 });
     }
     this._flashCursor = 0;
+
+    // expanding shockwave rings (dash strikes + finishers), billboarded
+    this.rings = [];
+    const ringGeo = new THREE.RingGeometry(0.82, 1.0, 40);
+    for (let i = 0; i < 12; i++) {
+      const m = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({
+        color: 0xffe08a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+      }));
+      m.visible = false; m.frustumCulled = false;
+      scene.add(m);
+      this.rings.push({ mesh: m, life: 0, maxLife: 0.34, maxR: 3 });
+    }
+    this._ringCursor = 0;
   }
 
   addTrauma(amount) { this.trauma = clamp01(this.trauma + amount); }
@@ -340,6 +353,35 @@ export class FX {
 
   muzzleFlash(point) { this.impactLight(point, 0xffd27f, 9, 0.05); }
 
+  // A bright expanding ring, camera-facing — the punctuation on a dash strike.
+  shockwave(point, colorHex = 0xffe08a, maxR = 3.2, life = 0.34) {
+    const r = this.rings[this._ringCursor];
+    this._ringCursor = (this._ringCursor + 1) % this.rings.length;
+    r.mesh.position.copy(point);
+    r.mesh.material.color.setHex(colorHex);
+    r.mesh.material.opacity = 0.95;
+    r.mesh.scale.setScalar(0.3);
+    r.mesh.lookAt(this.camera.position);
+    r.mesh.visible = true;
+    r.life = life; r.maxLife = life; r.maxR = maxR;
+  }
+
+  // A backward kick of dust when a dash launches or connects.
+  dashDust(point, dir) {
+    const back = dir.clone().negate();
+    for (let i = 0; i < 6; i++) {
+      const d = this._cone(back, 0.6);
+      this.smoke.emit(point.x, point.y + 0.25, point.z, d.x * 3, d.y * 2 + 0.5, d.z * 3,
+        0.5, 0.46, 0.4, rand(0.25, 0.5), rand(0.11, 0.2), -0.5, 2.6);
+    }
+    for (let i = 0; i < 5; i++) {
+      const d = this._cone(back, 0.5);
+      const s = rand(3, 6);
+      this.debris.emit(point.x, point.y + 0.1, point.z, d.x * s, d.y * 3 + 1, d.z * s,
+        0.42, 0.36, 0.28, rand(0.2, 0.4), rand(0.05, 0.1), 16, 3);
+    }
+  }
+
   // --- per-frame update --------------------------------------------------
 
   update(realDt) {
@@ -366,6 +408,16 @@ export class FX {
         f.life -= realDt;
         f.light.intensity = f.power * clamp01(f.life / f.maxLife);
         if (f.life <= 0) f.light.visible = false;
+      }
+    }
+    for (const r of this.rings) {
+      if (r.life > 0) {
+        r.life -= realDt;
+        const t = clamp01(1 - r.life / r.maxLife);
+        r.mesh.scale.setScalar(0.3 + t * r.maxR);
+        r.mesh.material.opacity = (1 - t) * 0.95;
+        r.mesh.lookAt(this.camera.position);
+        if (r.life <= 0) r.mesh.visible = false;
       }
     }
 

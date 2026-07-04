@@ -30,17 +30,19 @@ mouse).
 
 | | |
 |---|---|
-| **WASD** | move |
-| **Mouse** | look · **Left click** fire |
-| **Space** | jump (coyote-time + jump-buffer + variable height) |
-| **Shift** | sprint |
-| **Ctrl / C** | crouch · **sprint + crouch** = slide |
-| **R** | reload |
+| **WASD** | move — you're **always running** at full speed |
+| **Mouse** | look · **Left click** fire · **Right click** aim (iron sights) |
+| **Space** | jump — press again in the air for a **high double jump** |
+| **Shift / F / Q / E · Mouse4** | **dash** — a fast i-frame lunge; **dash into enemies to strike** |
+| **Ctrl / C** | crouch · **run + crouch** = slide |
 | **1 / 2 / wheel** | switch weapons (carbine · shotgun) |
 | **Esc** | pause |
 
+**There is no reload.** DOOM-style: your ammo only comes from what enemies drop and
+from **dash finishers**, so you have to stay aggressive to stay armed and alive.
+
 **On mobile** it auto-switches to touch controls: a floating left-stick to move,
-drag the right side to look, and on-screen **FIRE / JUMP / RLD / pause** buttons.
+drag the right side to look, and on-screen **FIRE / JUMP / DASH / AIM / pause** buttons.
 
 Survive escalating waves. Score points, chain your combo, don't die. Your best run
 is saved locally and shown on the menu.
@@ -70,21 +72,36 @@ a photo. The whole scene is generated at load, then run through a filmic camera:
 
 Game feel is the sum of a hundred small responses. The big ones here:
 
-- **Movement** — Quake/Source-style explicit ground/air acceleration with friction
-  and stop-speed for crisp starts and stops, air-strafe acceleration, coyote time,
-  jump buffering, a floaty variable-height jump, and a momentum-preserving
-  crouch-slide — all following the rolling heightfield with snap-to-ground.
-- **Gunplay** — hitscan with spread "bloom" that grows while you fire and move and
-  recovers when you settle. Every shot drives recoil, an FOV punch, trauma-based
-  screen shake, a muzzle flash + light, a tracer, spark burst and a spinning brass
-  casing. Headshots hit harder. Two weapons: an automatic **carbine** and a
-  hard-hitting **shotgun**.
-- **Impact** — enemies flash on hit, snap back with knockback, spray a blood burst,
-  and crumple through a scripted death instead of just vanishing. Meaty hits trigger
-  a micro hit-stop; wiping out a threat dips the world into a brief kill slow-mo.
+- **Movement** — Quake/Source-style ground/air acceleration on a rolling heightfield.
+  You're **always running** at top speed, with air-strafe acceleration, coyote time,
+  jump buffering, a variable-height jump, and a momentum-preserving crouch-slide.
+- **Double jump** — tap jump again in the air for a strong second launch (one per
+  airtime), with an air-burst ring and whoosh. Reach the high ground, juke the horde.
+- **Dash & jump-dash** — a fast, committed lunge in your move direction (ground *or*
+  air) with brief **i-frames**, a big FOV punch, camera roll, radial speed-lines, a
+  whoosh and a dust kick. Dashing decays into carried momentum, so dash→jump keeps
+  your speed. It's a dodge *and* a weapon.
+- **Dash strike & finishers** — dashing **through** enemies smashes them: a shockwave
+  ring, blood, heavy knockback and a per-body hit-stop, and you can carve through a
+  whole crowd in one lunge (i-frames keep you safe). Catch one that's **low on health**
+  and it's a **FINISHER** — a gold flash, slow-mo, bonus points, and (crucially) a
+  refill of **ammo + health**. Aggression is how you sustain.
+- **No reload — feed on the horde** — there's no magazine and only a trickle of passive
+  regen. Every weapon draws from one pool that refills from enemy **ammo/health drops**
+  (adaptive: more health when you're hurt) and from dash finishers. Glowing pickups
+  magnetise into you. Push forward or run dry.
+- **Iron sights** — hold right-click to bring the gun up, zoom in, tighten your spread
+  and steady your aim (it drops you to a walk and calms the bob). Raising sights breaks
+  your run; dashing breaks your sights.
+- **Gunplay** — hitscan with spread "bloom" that grows while you fire and move. Every
+  shot drives recoil, an FOV punch, screen shake, a muzzle flash + light, a tracer,
+  spark burst and a spinning brass casing. Headshots hit harder. Carbine + shotgun.
+- **Impact** — enemies flash on hit, snap back, spray signature-coloured blood, and
+  crumple through a scripted death. Meaty hits trigger a micro hit-stop; wiping out a
+  threat dips the world into a brief kill slow-mo (which the real-time dash cuts right
+  through — you glide past frozen enemies).
 - **Arcade scoring** — a combo multiplier climbs as you chain kills without missing,
-  headshots pay a bonus, and clearing a wave pays out. Floating score pops and a
-  live combo meter keep the reward loop tight.
+  headshots and finishers pay bonuses, and clearing a wave pays out.
 
 ## The horde
 

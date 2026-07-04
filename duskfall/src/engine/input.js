@@ -8,12 +8,10 @@ const KEY_MAP = {
   KeyA: 'left', ArrowLeft: 'left',
   KeyD: 'right', ArrowRight: 'right',
   Space: 'jump',
-  ShiftLeft: 'sprint', ShiftRight: 'sprint',
+  ShiftLeft: 'dash', ShiftRight: 'dash',      // Shift dashes (you always run at speed)
   ControlLeft: 'crouch', ControlRight: 'crouch', KeyC: 'crouch',
-  KeyR: 'reload',
   Digit1: 'weapon1', Digit2: 'weapon2', Digit3: 'weapon3',
-  KeyF: 'melee',
-  KeyE: 'use',
+  KeyF: 'dash', KeyQ: 'dash', KeyE: 'dash',   // ...also on the WASD-adjacent keys
 };
 
 export class Input {
@@ -62,10 +60,12 @@ export class Input {
       if (!this.locked) return;
       if (e.button === 0) { if (!this.held.has('fire')) this.pressed.add('fire'); this.held.add('fire'); }
       if (e.button === 2) { if (!this.held.has('aim')) this.pressed.add('aim'); this.held.add('aim'); }
+      if (e.button === 3 || e.button === 4) { if (!this.held.has('dash')) this.pressed.add('dash'); this.held.add('dash'); } // mouse side buttons dash
     };
     this._onMouseUp = (e) => {
       if (e.button === 0) { this.held.delete('fire'); this.released.add('fire'); }
       if (e.button === 2) { this.held.delete('aim'); this.released.add('aim'); }
+      if (e.button === 3 || e.button === 4) { this.held.delete('dash'); this.released.add('dash'); }
     };
     this._onWheel = (e) => { if (this.locked) this.wheel += Math.sign(e.deltaY); };
     this._onContext = (e) => e.preventDefault();

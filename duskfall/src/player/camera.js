@@ -8,8 +8,10 @@ import * as THREE from 'three';
 import { clamp, damp, spring, lerp } from '../engine/math.js';
 
 const PITCH_LIMIT = Math.PI / 2 - 0.04;
-const BASE_FOV = 88;
-const SPRINT_FOV = 10;
+const BASE_FOV = 86;
+const SPRINT_FOV = 6;        // gentle widen while running (running is now the default)
+const ADS_FOV = 54;          // iron-sight zoom
+const ADS_SENS = 0.5;        // slower, steadier aim while sighted
 
 export class CameraRig {
   constructor(camera) {
@@ -32,6 +34,8 @@ export class CameraRig {
 
     this._prevYaw = this.yaw;
     this.sens = 1;
+    this.aimT = 0;            // 0 = hip, 1 = fully ADS (damped toward aimTarget)
+    this.aimTarget = 0;
     this.lastLook = { yaw: 0, pitch: 0 }; // consumed by the weapon for sway
   }
 
@@ -40,13 +44,15 @@ export class CameraRig {
     this.recoilPitch = this.recoilYaw = 0;
     this.bobPhase = 0; this.roll = 0; this.fov = BASE_FOV; this.fovPunch = 0;
     this.dip = 0; this.dipVel = 0;
+    this.aimT = 0; this.aimTarget = 0;
   }
 
   // Called BEFORE the controller so movement uses fresh aim yaw.
   processLook(dt, input) {
     const look = input.consumeLook();
-    this.lastLook.yaw = look.yaw * this.sens;
-    this.lastLook.pitch = look.pitch * this.sens;
+    const s = this.sens * lerp(1, ADS_SENS, this.aimT);
+    this.lastLook.yaw = look.yaw * s;
+    this.lastLook.pitch = look.pitch * s;
     this.yaw += this.lastLook.yaw;
     this.pitch = clamp(this.pitch + this.lastLook.pitch, -PITCH_LIMIT, PITCH_LIMIT);
     return this.yaw;
@@ -61,15 +67,18 @@ export class CameraRig {
 
   // Called AFTER the controller, just before render.
   applyView(dt, ctrl, fx, input) {
+    // ease the ADS blend toward the held target
+    this.aimT = damp(this.aimT, this.aimTarget, 16, dt);
+
     // recoil recovers smoothly back to center (the kick was applied instantly)
     this.recoilPitch = damp(this.recoilPitch, 0, 9, dt);
     this.recoilYaw = damp(this.recoilYaw, 0, 9, dt);
 
-    // head bob driven by ground speed
+    // head bob driven by ground speed (calmed while sighted)
     const speed01 = clamp(ctrl.horizSpeed / 10.5, 0, 1.3);
     const grounded = ctrl.onGround ? 1 : 0;
     this.bobPhase += ctrl.horizSpeed * dt * 1.5;
-    const bobAmt = speed01 * grounded * (ctrl.isSprinting ? 1.25 : 1);
+    const bobAmt = speed01 * grounded * (ctrl.isSprinting ? 1.25 : 1) * (1 - this.aimT * 0.8);
     const bobX = Math.cos(this.bobPhase) * 0.045 * bobAmt;
     const bobY = Math.abs(Math.sin(this.bobPhase)) * 0.06 * bobAmt;
 
@@ -88,15 +97,22 @@ export class CameraRig {
     this._prevYaw = this.yaw;
     let targetRoll = -axis.x * 0.035 - clamp(yawVel, -8, 8) * 0.004;
     if (ctrl._sliding) targetRoll += -axis.x * 0.05 - 0.02;
+    // dash tilt: lean into the lateral component of the dash
+    if (ctrl.isDashing()) {
+      const rightX = Math.cos(this.yaw), rightZ = -Math.sin(this.yaw);
+      const lateral = ctrl.dashDir.x * rightX + ctrl.dashDir.z * rightZ;
+      targetRoll += -lateral * 0.09;
+    }
     this.roll = damp(this.roll, targetRoll, 10, dt);
 
-    // FOV: base + sprint + per-shot punch
-    let targetFov = BASE_FOV;
-    if (ctrl.isSprinting) targetFov += SPRINT_FOV;
-    if (ctrl._sliding) targetFov += SPRINT_FOV * 1.4;
+    // FOV: base (or ADS zoom) + sprint + per-shot/dash punch
+    let targetFov = lerp(BASE_FOV, ADS_FOV, this.aimT);
+    if (ctrl.isSprinting) targetFov += SPRINT_FOV * (1 - this.aimT);
+    if (ctrl._sliding) targetFov += SPRINT_FOV * 1.4 * (1 - this.aimT);
     targetFov += this.fovPunch;
     this.fovPunch = damp(this.fovPunch, 0, 11, dt);
-    this.fov = damp(this.fov, targetFov, 12, dt);
+    // snap toward ADS a touch faster than it eases out, so sighting feels crisp
+    this.fov = damp(this.fov, targetFov, this.aimTarget > 0.5 ? 16 : 12, dt);
 
     // --- compose final transform ---
     const eye = ctrl.eyePosition;

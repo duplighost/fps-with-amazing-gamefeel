@@ -214,7 +214,37 @@ export class Audio {
   }
 
   jump() { this._tone({ freq: 320, freq2: 480, dur: 0.1, vol: 0.18, type: 'square' }); }
+  doubleJump() {
+    // an airy upward whoosh + a bright confirming chime for the second launch
+    this._noiseBurst({ dur: 0.22, vol: 0.22, type: 'bandpass', freq: 500, sweepTo: 2600, q: 0.7 });
+    this._tone({ freq: 440, freq2: 880, dur: 0.14, vol: 0.22, type: 'triangle' });
+  }
   slide() { this._noiseBurst({ dur: 0.5, vol: 0.22, type: 'bandpass', freq: 1600, sweepTo: 300, q: 0.8 }); }
+  dash() {
+    // a fast air-tearing swoosh with a low body thump
+    this._noiseBurst({ dur: 0.24, vol: 0.34, type: 'bandpass', freq: 900, sweepTo: 3400, q: 0.6 });
+    this._noiseBurst({ dur: 0.16, vol: 0.2, type: 'lowpass', freq: 700, sweepTo: 180 });
+    this._tone({ freq: 220, freq2: 520, dur: 0.13, vol: 0.2, type: 'sawtooth' });
+  }
+  dashHit(pan = 0) {
+    // a heavy shoulder-charge crunch
+    const dest = this._panned(pan);
+    this._noiseBurst({ dur: 0.09, vol: 0.4, type: 'lowpass', freq: 900, sweepTo: 150, q: 1, dest });
+    this._tone({ freq: 150, freq2: 60, dur: 0.14, vol: 0.3, type: 'square', dest });
+  }
+  finisher(pan = 0) {
+    // a decisive, cinematic execution stinger: deep boom + metallic shing
+    const dest = this._panned(pan);
+    this._noiseBurst({ dur: 0.14, vol: 0.5, type: 'lowpass', freq: 700, sweepTo: 90, dest });
+    this._tone({ freq: 120, freq2: 44, dur: 0.4, vol: 0.36, type: 'sawtooth', dest });
+    this._tone({ freq: 1600, freq2: 2600, dur: 0.12, vol: 0.28, type: 'triangle', dest });
+    setTimeout(() => this._tone({ freq: 880, freq2: 1320, dur: 0.16, vol: 0.22, type: 'triangle' }), 60);
+  }
+  ammoGrab() {
+    // a crisp mechanical "clip in" confirm
+    this._tone({ freq: 740, freq2: 1180, dur: 0.09, vol: 0.26, type: 'square' });
+    this._noiseBurst({ dur: 0.05, vol: 0.16, type: 'bandpass', freq: 2600, q: 0.8 });
+  }
 
   // --- grind rails ---
   grindStart() { [0, 45, 90].forEach((d, i) => setTimeout(() => this._tone({ freq: 523 * Math.pow(1.33, i), dur: 0.08, vol: 0.18, type: 'triangle' }), d)); }

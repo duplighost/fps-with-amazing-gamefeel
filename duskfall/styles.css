@@ -38,8 +38,30 @@ body { font-family: var(--font); color: #fff; user-select: none; -webkit-user-se
     radial-gradient(ellipse at center, transparent 30%, rgba(70, 150, 255, 0.5) 100%);
 }
 
+/* ---------- ADS (iron sights) darkening ---------- */
+#ads-vignette {
+  position: absolute; inset: 0; opacity: 0; pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 26%, rgba(0, 0, 0, 0.5) 70%, rgba(0, 0, 0, 0.8) 100%);
+  transition: opacity 0.09s linear;
+}
+
+/* ---------- dash speed-lines (radial motion streaks) ---------- */
+#dash-lines {
+  position: absolute; inset: 0; opacity: 0; pointer-events: none; mix-blend-mode: screen;
+  background: repeating-conic-gradient(from 0deg at 50% 50%, rgba(230, 244, 255, 0) 0deg 3.4deg, rgba(220, 240, 255, 0.22) 3.4deg 4deg);
+  -webkit-mask: radial-gradient(ellipse at center, transparent 38%, #000 74%);
+          mask: radial-gradient(ellipse at center, transparent 38%, #000 74%);
+}
+
+/* ---------- finisher flash (execution pop) ---------- */
+#finisher-flash {
+  position: absolute; inset: 0; opacity: 0; pointer-events: none; mix-blend-mode: screen;
+  background: radial-gradient(ellipse at center, rgba(255, 242, 205, 0.55) 0%, rgba(255, 176, 84, 0.28) 45%, transparent 74%);
+}
+
 /* ---------- crosshair ---------- */
-#crosshair { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
+#crosshair { position: absolute; left: 50%; top: 50%; width: 0; height: 0; transition: opacity 0.1s linear; }
+#crosshair.ads { opacity: 0.12; }
 #crosshair .ch-dot {
   position: absolute; left: 50%; top: 50%; width: 3px; height: 3px; border-radius: 50%;
   background: var(--cyan); transform: translate(-50%, -50%);
@@ -95,7 +117,10 @@ body { font-family: var(--font); color: #fff; user-select: none; -webkit-user-se
 }
 .popup.dmg { color: #ffffff; font-size: 20px; }
 .popup.dmg.head { color: var(--amber); font-size: 30px; text-shadow: 0 0 10px rgba(255, 194, 74, 0.8); }
+.popup.dmg.dash { color: #fff; font-size: 26px; text-shadow: 0 0 12px rgba(255, 176, 84, 0.9); }
 .popup.score { color: var(--green); font-size: 24px; text-shadow: 0 0 10px rgba(58, 255, 192, 0.7); }
+.popup.finisher { color: var(--amber); font-size: 30px; font-weight: 900; letter-spacing: 2px; text-shadow: 0 0 16px rgba(255, 176, 84, 0.95); }
+.popup.ammo { color: var(--amber); font-size: 19px; letter-spacing: 1px; text-shadow: 0 0 10px rgba(255, 181, 69, 0.75); }
 
 /* ---------- bottom HUD ---------- */
 #hud-bottom-left { position: absolute; left: 32px; bottom: 28px; }
@@ -118,6 +143,11 @@ body { font-family: var(--font); color: #fff; user-select: none; -webkit-user-se
 #hud-bottom-right { position: absolute; right: 32px; bottom: 28px; text-align: right; }
 #weapon-name { font-size: 15px; letter-spacing: 3px; color: var(--cyan); opacity: 0.85; margin-bottom: 2px; }
 #ammo { font-family: var(--mono); font-weight: 800; line-height: 1; }
+#ammo.gain { animation: ammogain 0.5s ease-out; }
+@keyframes ammogain {
+  0% { color: var(--amber); text-shadow: 0 0 18px var(--amber); }
+  100% { color: inherit; text-shadow: none; }
+}
 #ammo-mag { font-size: 52px; }
 #ammo-mag.empty { color: var(--pink); }
 #ammo-sep { font-size: 30px; opacity: 0.5; margin: 0 4px; }
@@ -212,6 +242,8 @@ body { font-family: var(--font); color: #fff; user-select: none; -webkit-user-se
   font-size: 13px; opacity: 0.7; text-align: left;
 }
 #controls b { color: var(--cyan); font-family: var(--mono); }
+#controls .wide { grid-column: 1 / -1; margin-top: 4px; opacity: 0.85; }
+#controls .wide b { color: var(--amber); }
 
 .result { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 40px; margin: 28px 0 8px; }
 .result > div { display: flex; flex-direction: column; }
@@ -248,7 +280,9 @@ body { font-family: var(--font); color: #fff; user-select: none; -webkit-user-se
 #touch-fire { right: 30px; bottom: 34px; width: 96px; height: 96px; font-size: 16px; border-color: rgba(255, 58, 107, 0.6); }
 #touch-fire.active { background: rgba(255, 58, 107, 0.35); }
 #touch-jump { right: 140px; bottom: 40px; width: 72px; height: 72px; font-size: 13px; }
-#touch-reload { right: 46px; bottom: 142px; width: 66px; height: 66px; font-size: 13px; }
+#touch-dash { right: 44px; bottom: 142px; width: 68px; height: 68px; font-size: 13px; border-color: rgba(255, 181, 69, 0.6); }
+#touch-dash.active { background: rgba(255, 181, 69, 0.32); }
+#touch-aim { right: 150px; bottom: 132px; width: 62px; height: 62px; font-size: 12px; }
 #touch-pause { right: 18px; top: 16px; width: 48px; height: 48px; font-size: 14px; }
 
 /* keep the ammo readout clear of the fire/jump/reload buttons on mobile */

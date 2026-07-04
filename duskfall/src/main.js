@@ -12,14 +12,26 @@ import { CameraRig } from './player/camera.js';
 import { Weapons } from './weapons/weapon.js';
 import { buildWorld } from './world/world.js';
 import { EnemyManager } from './enemies/enemy.js';
+import { PickupManager } from './world/pickups.js';
 import { HUD } from './ui/hud.js';
 import { buildComposer } from './gfx/post.js';
 
 const MAX_HEALTH = 100;
-const REGEN_DELAY = 6;
-const REGEN_RATE = 12;
+// Passive regen is deliberately weak (only a low floor) — real healing comes
+// from health drops and dash finishers, DOOM-style, to force aggression.
+const REGEN_DELAY = 4;
+const REGEN_RATE = 7;
+const REGEN_CAP = 32;
 const HIT_INVULN = 0.4;
 const BEST_KEY = 'duskfall.best';
+
+// dash strike + finisher tuning
+const DASH_DAMAGE = 130;
+const FINISHER_FRAC = 0.42;      // enemy at/below this fraction of max hp is finishable
+const FINISHER_MIN = 55;         // ...or below this absolute hp
+const FINISHER_BONUS = 150;
+const FINISHER_HEAL = 18;        // Glory-kill style health reward
+const DROP_HEALTH = 26;
 
 class Game {
   constructor() {
@@ -57,6 +69,9 @@ class Game {
     };
 
     this.enemies = new EnemyManager(this.scene, this.fx, this.audio, this.world, this.player);
+    this.pickups = new PickupManager(this.scene, this.world.terrain);
+    this._dashHitSet = new Set();     // enemies struck by the current dash
+    this._dashKills = 0; this._dashFinishers = 0;
     this.weapons = new Weapons({
       fx: this.fx, audio: this.audio, cam: this.cam, mainCamera: this.camera,
       hitscan: (o, d, r) => this.hitscan(o, d, r),
@@ -104,6 +119,24 @@ class Game {
         const cleared = this.enemies.aliveCount() === 0 && this.enemies.spawnQueue.length === 0;
         this.fx.addSlowmo(cleared ? 0.18 : isHead ? 0.32 : 0.5);
       }
+      this._maybeDrop(e, pos);
+    };
+
+    this.pickups.onCollect = (type, pos) => {
+      if (type === 'ammo') {
+        if (this.weapons.addAmmo(1)) {
+          this.hud.ammoFlash();
+          this.hud.popText(pos, '+ AMMO', this.camera, 'ammo');
+          this.audio.ammoGrab();
+        } else { this._scorePickup(pos); }   // already full → never a dead pickup
+      } else {
+        if (this.health < MAX_HEALTH) {
+          this.health = Math.min(MAX_HEALTH, this.health + DROP_HEALTH);
+          this.hud.setHealth(this.health, MAX_HEALTH);
+          this.hud.popText(pos, '+' + DROP_HEALTH + ' HP', this.camera, 'score');
+          this.audio.pickup();
+        } else { this._scorePickup(pos); }
+      }
     };
     this.enemies.onCountChange = (n) => this.hud.setEnemies(n);
     this.enemies.onWaveStart = (n) => { this.hud.setWave(n); this.hud.banner('WAVE ' + n, n % 5 === 0 ? 'they keep coming…' : 'incoming', '#ffce7a'); };
@@ -144,9 +177,19 @@ class Game {
       el.addEventListener('touchend', up); el.addEventListener('touchcancel', up);
     };
     hold(hud.touchFire, 'fire'); hold(hud.touchJump, 'jump');
-    hud.touchReload.addEventListener('touchstart', (e) => { e.preventDefault(); hud.touchReload.classList.add('active'); this.input.setHeld('reload', true); this.input.setHeld('reload', false); }, { passive: false });
-    hud.touchReload.addEventListener('touchend', () => hud.touchReload.classList.remove('active'));
+    // dash: an edge tap
+    hud.touchDash.addEventListener('touchstart', (e) => { e.preventDefault(); hud.touchDash.classList.add('active'); this.input.setHeld('dash', true); this.input.setHeld('dash', false); }, { passive: false });
+    hud.touchDash.addEventListener('touchend', () => hud.touchDash.classList.remove('active'));
+    // ADS: a toggle on touch
+    this._touchAiming = false;
+    hud.touchAim.addEventListener('touchstart', (e) => { e.preventDefault(); this._touchAiming = !this._touchAiming; hud.touchAim.classList.toggle('active', this._touchAiming); this.input.setHeld('aim', this._touchAiming); }, { passive: false });
     hud.touchPause.addEventListener('touchstart', (e) => { e.preventDefault(); if (this.state === 'playing') { this.state = 'paused'; this.hud.showPause(); } }, { passive: false });
+  }
+
+  _scorePickup(pos) {
+    this.score += 25; this.hud.setScore(this.score);
+    this.hud.popText(pos, '+25', this.camera, 'ammo');
+    this.audio.ammoGrab();
   }
 
   startRun() {
@@ -154,6 +197,8 @@ class Game {
     this.cam.reset();
     this.weapons.reset();
     this.enemies.reset();
+    this.pickups.reset();
+    this._dashHitSet.clear();
     this.fx.trauma = 0; this.fx.hitstop = 0; this.fx.slowmo = 1;
     this.health = MAX_HEALTH; this.invuln = 0; this.lastDamage = this.time;
     this.score = 0; this.combo = 0;
@@ -164,9 +209,9 @@ class Game {
   }
 
   playerTakeDamage(amount, sourcePos) {
-    if (this.state !== 'playing' || this.invuln > 0) return;
+    if (this.state !== 'playing' || this.invuln > 0 || this.controller.dashInvuln) return;
     this.health -= amount; this.invuln = HIT_INVULN; this.lastDamage = this.time;
-    this.combo = 0; // getting hit breaks your combo
+    this.combo = 0; this.hud.breakCombo(); // getting hit breaks your combo (score + meter)
     this.hud.setHealth(Math.max(0, this.health), MAX_HEALTH);
     this.hud.damageFlash(clamp01(amount / 28), sourcePos, this.camera);
     this.audio.playerHurt();
@@ -233,17 +278,28 @@ class Game {
       const scale = this.fx.consumeTimeScale(realDt);
       const gdt = realDt * scale;
       this.cam.processLook(realDt, this.input);
+      const dashing = this.controller.isDashing();
+      // Always advance the controller. A live dash runs on realDt so it lunges
+      // crisply through kill slow-mo; otherwise it runs on gdt (which is 0 during
+      // a hitstop freeze — a no-op move, but the frame still consumes a dash/jump
+      // input edge so presses aren't dropped mid-freeze).
+      this.controller.update(dashing ? realDt : gdt, this.input, this.cam.yaw);
+      this._movementEvents();
       if (gdt > 0) {
-        this.controller.update(gdt, this.input, this.cam.yaw);
-        this._moveAudio();
         this.enemies.update(gdt);
         this.world.update(gdt, this.controller.pos);
         this._regen(gdt);
         if (this.comboTimer > 0) { this.comboTimer -= gdt; if (this.comboTimer <= 0) this.combo = 0; }
       }
+      this._dashSweep();
+      // dash i-frames (owned by main): block hits through the dash + recovery
+      if (this.controller.dashInvuln) this.invuln = Math.max(this.invuln, 0.05);
+      // hold right-click for iron sights (dashing / sliding suppress it)
+      this.cam.aimTarget = (this.input.isDown('aim') && !this.controller.isDashing() && !this.controller._sliding) ? 1 : 0;
       this.cam.applyView(realDt, this.controller, this.fx, this.input);
+      this.hud.setAim(this.cam.aimT);
       this.weapons.update(realDt, this.controller, this.input);
-      if (this.weapons.reloading) this.hud.setReloadProgress(1 - this.weapons.reloadTimer / this.weapons.def.reloadTime);
+      this.pickups.update(realDt, this.controller.pos);
     }
     this.fx.update(realDt);
     this.hud.update(realDt, this.camera);
@@ -255,17 +311,106 @@ class Game {
     this.input.endFrame();
   }
 
-  _moveAudio() {
+  _movementEvents() {
     const ev = this.controller.events;
     if (ev.jumped) this.audio.jump();
     if (ev.landed > 0) this.audio.land(ev.landed);
     if (ev.stepped) this.audio.footstep(this.controller.isSprinting ? 1 : 0.5);
     if (ev.slid) this.audio.slide();
+    if (ev.doubleJumped) {
+      this.audio.doubleJump();
+      this.cam.addFovPunch(4);
+      this.fx.addTrauma(0.08);
+      const f = this.controller.pos;
+      this.fx.shockwave(new THREE.Vector3(f.x, f.y + 0.1, f.z), 0x7df9ff, 2.0, 0.3); // cyan feet-ring
+      this.fx.dashDust(new THREE.Vector3(f.x, f.y, f.z), new THREE.Vector3(0, -1, 0));
+    }
+    if (ev.dashed) {
+      this._dashHitSet.clear();
+      this._dashKills = 0; this._dashFinishers = 0;
+      this.audio.dash();
+      this.cam.addFovPunch(11);
+      this.fx.addTrauma(0.14);
+      this.hud.dashFx();
+      const p = this.controller.pos;
+      this.fx.dashDust(new THREE.Vector3(p.x, p.y + 0.2, p.z), this.controller.dashDir);
+    }
+  }
+
+  // While dashing, strike every enemy the player sweeps through (once each);
+  // low-health enemies are executed with a finisher.
+  _dashSweep() {
+    if (!this.controller.isDashing()) return;
+    const cp = this.controller.pos;
+    for (const e of this.enemies.enemies) {
+      if (!e.alive || this._dashHitSet.has(e)) continue;
+      const dx = e.pos.x - cp.x, dz = e.pos.z - cp.z;
+      const rr = this.controller.dashHitRadius + e.def.radius;
+      if (dx * dx + dz * dz <= rr * rr) {
+        this._dashHitSet.add(e);
+        this._dashStrike(e);
+      }
+    }
+  }
+
+  _dashStrike(e) {
+    const maxHp = e.maxHealth;
+    const point = new THREE.Vector3(e.pos.x, e.pos.y + e.def.height * 0.55, e.pos.z);
+    const dir = this.controller.dashDir.clone();
+    // finisher = the target is "close to being killed" (low health)
+    const finisher = e.health <= Math.max(FINISHER_MIN, maxHp * FINISHER_FRAC);
+    const pan = this.enemies.panFor(e.pos);
+    e.knockback.addScaledVector(dir, finisher ? 4.5 : 3);
+    const killed = e.takeDamage(finisher ? e.health + 1 : DASH_DAMAGE, point, dir, false);
+
+    // always a big, visible strike (no floating number — the ring/blood carry it)
+    this.fx.shockwave(point, finisher ? 0xffe08a : 0xff8a3a, finisher ? 4.2 : 3);
+    this.fx.bloodBurst(point, dir, finisher ? 2.2 : 1.4, e.def.blood);
+    this.fx.addTrauma(finisher ? 0.35 : 0.18);
+    this.fx.addHitstop(0.03);                       // per-body "chunk"
+    this.hud.hitMarker(false, killed);
+    this.audio.dashHit(pan);
+    if (killed) this._dashKills++;
+
+    if (killed && finisher) {
+      this.fx.addSlowmo(0.14);
+      this.hud.finisherFx();
+      // only the first finisher of a dash gets the word, to avoid stacked text
+      if (this._dashFinishers++ === 0) this.hud.popText(point, 'FINISHER', this.camera, 'finisher');
+      this.score += FINISHER_BONUS; this.hud.setScore(this.score);
+      this.audio.finisher(pan);
+      // the aggressive loop: a finisher refills ammo and heals
+      this.weapons.grantFinisherAmmo();
+      this.hud.ammoFlash();
+      this.health = Math.min(MAX_HEALTH, this.health + FINISHER_HEAL);
+      this.hud.setHealth(this.health, MAX_HEALTH);
+    }
+    // reward slicing through a crowd
+    if (this._dashKills === 3) {
+      this.hud.popText(this.controller.eyePosition.addScaledVector(dir, 3), 'SLICE ×3+', this.camera, 'finisher');
+    }
+  }
+
+  // Roll for an ammo/health drop when an enemy dies. Adaptive: bias to health
+  // when the player is hurt, ammo otherwise; tough enemies drop more.
+  _maybeDrop(e, pos) {
+    const hpTier = clamp01(e.maxHealth / 240);
+    const chance = 0.42 + hpTier * 0.4;
+    if (Math.random() > chance) return;
+    const hurt = this.health < MAX_HEALTH * 0.6;
+    const wantHealth = hurt ? Math.random() < 0.62 : Math.random() < 0.24;
+    const type = wantHealth ? 'health' : 'ammo';
+    this.pickups.spawn(type, pos);
+    if (e.maxHealth >= 240 && Math.random() < 0.6) {
+      const jitter = new THREE.Vector3((Math.random() - 0.5) * 1.4, 0, (Math.random() - 0.5) * 1.4);
+      this.pickups.spawn(wantHealth ? 'ammo' : 'health', pos.clone().add(jitter));
+    }
   }
 
   _regen(dt) {
-    if (this.health < MAX_HEALTH && this.time - this.lastDamage > REGEN_DELAY) {
-      this.health = Math.min(MAX_HEALTH, this.health + REGEN_RATE * dt);
+    // only a slow trickle, and only up to a low floor — encourages going for drops
+    if (this.health < REGEN_CAP && this.time - this.lastDamage > REGEN_DELAY) {
+      this.health = Math.min(REGEN_CAP, this.health + REGEN_RATE * dt);
       this.hud.setHealth(this.health, MAX_HEALTH);
     }
   }
