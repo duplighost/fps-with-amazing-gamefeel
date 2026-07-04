@@ -2,3 +2,8 @@ node_modules/
 .DS_Store
 *.log
 .cache/
+
+# local dev scratch: Playwright test scripts, capture screenshots, deploy zips
+d*.mjs
+dusk_*.png
+*-netlify.zip
