@@ -331,6 +331,7 @@ class Game {
       this.cam.aimTarget = (this.input.isDown('aim') && !this.controller.isDashing() && !this.controller._sliding) ? 1 : 0;
       this.cam.applyView(realDt, this.controller, this.fx, this.input);
       this.hud.setAim(this.cam.aimT);
+      this.hud.setDash(this.controller.dashCharges, this.controller.maxDashCharges, this.controller.dashRechargeRatio, this.controller.isDashing());
       this.weapons.update(realDt, this.controller, this.input);
       this.pickups.update(realDt, this.controller.pos);
     }

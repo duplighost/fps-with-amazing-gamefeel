@@ -73,14 +73,17 @@ a photo. The whole scene is generated at load, then run through a filmic camera:
 Game feel is the sum of a hundred small responses. The big ones here:
 
 - **Movement** — Quake/Source-style ground/air acceleration on a rolling heightfield.
-  You're **always running** at top speed, with air-strafe acceleration, coyote time,
+  You're **always running** at top speed, with strong air-strafe control, coyote time,
   jump buffering, a variable-height jump, and a momentum-preserving crouch-slide.
-- **Double jump** — tap jump again in the air for a strong second launch (one per
-  airtime), with an air-burst ring and whoosh. Reach the high ground, juke the horde.
-- **Dash & jump-dash** — a fast, committed lunge in your move direction (ground *or*
-  air) with brief **i-frames**, a big FOV punch, camera roll, radial speed-lines, a
-  whoosh and a dust kick. Dashing decays into carried momentum, so dash→jump keeps
-  your speed. It's a dodge *and* a weapon.
+- **Air game** — this is the star. High jumps plus a big **double jump**, and a dash
+  that runs on **two regenerating charges** and, in the air, **launches you upward**.
+  So you can chain **jump → air-dash → air-dash** to soar high and float clear across
+  the field — a long, expressive, weightless traversal that turns every fight into a
+  movement playground.
+- **Dash & jump-dash** — a fast lunge in your move direction (ground *or* air) with
+  brief **i-frames**, a big FOV punch, camera roll, radial speed-lines, a whoosh and
+  a dust kick. On the ground it hops you forward; in the air it lifts and carries you.
+  It's a dodge, a traversal tool, *and* a weapon.
 - **Dash strike & finishers** — dashing **through** enemies smashes them: a shockwave
   ring, blood, heavy knockback and a per-body hit-stop, and you can carve through a
   whole crowd in one lunge (i-frames keep you safe). Catch one that's **low on health**

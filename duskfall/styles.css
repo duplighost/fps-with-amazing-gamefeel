@@ -201,6 +201,26 @@ body { font-family: var(--font); color: #fff; user-select: none; -webkit-user-se
 #grind-ind.show { opacity: 1; transform: translateX(-50%) scale(1); }
 #grind-ind b { font-family: var(--mono); color: #fff; }
 
+/* ---------- dash-charge meter ---------- */
+#dash-meter {
+  position: absolute; left: 50%; bottom: 92px; transform: translateX(-50%);
+  display: flex; gap: 9px; opacity: 0.7; transition: opacity 0.12s, transform 0.12s;
+}
+#dash-meter.active { opacity: 1; transform: translateX(-50%) scale(1.12); }
+#dash-meter i {
+  position: relative; display: block; width: 34px; height: 6px; border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1); overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(255, 181, 69, 0.3);
+}
+#dash-meter i::before {
+  content: ""; position: absolute; inset: 0; width: var(--fillPct, 0%);
+  background: rgba(255, 181, 69, 0.55);
+}
+#dash-meter i.full::before {
+  width: 100%; background: linear-gradient(90deg, var(--amber), var(--cyan));
+  box-shadow: 0 0 12px rgba(255, 181, 69, 0.9);
+}
+
 /* ---------- boss health bar ---------- */
 #boss-bar {
   position: absolute; top: 84px; left: 50%; transform: translateX(-50%) translateY(-12px);

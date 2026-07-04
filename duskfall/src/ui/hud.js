@@ -68,6 +68,7 @@ export class HUD {
       </div>
 
       <div id="combo">x<span id="combo-num">2</span></div>
+      <div id="dash-meter"><i></i><i></i></div>
       <div id="banner"><div id="banner-main"></div><div id="banner-sub"></div></div>
       <div id="low-ammo">RELOAD</div>
 
@@ -139,6 +140,8 @@ export class HUD {
       popupLayer: q('#popup-layer'),
       combo: q('#combo'),
       comboNum: q('#combo-num'),
+      dashMeter: q('#dash-meter'),
+      dashPips: Array.from(document.querySelectorAll('#dash-meter i')),
       bossBar: q('#boss-bar'),
       bossName: q('#boss-name'),
       bossFill: q('#boss-fill'),
@@ -228,6 +231,15 @@ export class HUD {
   dashFx() { this.dashLineT = 1; }
   // white/gold execution pop
   finisherFx() { this.finisherT = 1; }
+
+  // dash-charge meter: filled pips = ready dashes; the next pip shows regen fill
+  setDash(charges, maxCharges, recharge, active) {
+    this.el.dashMeter.classList.toggle('active', !!active);
+    this.el.dashPips.forEach((p, i) => {
+      p.classList.toggle('full', i < charges);
+      p.style.setProperty('--fillPct', i === charges ? (clamp01(recharge) * 100).toFixed(1) + '%' : '0%');
+    });
+  }
 
   // boss health bar
   showBoss(name) {
