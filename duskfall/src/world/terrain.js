@@ -1,0 +1,120 @@
+// Procedural terrain: a rolling meadow inside a soft bowl of hills. The height
+// field is an analytic fbm so we can sample it cheaply anywhere — the mesh is
+// built from it and the player/enemies walk on the exact same function.
+
+import * as THREE from 'three';
+import { lerp, clamp01 } from '../engine/math.js';
+
+const PLAY_RADIUS = 60;   // gentle meadow within this radius
+const SIZE = 340;         // terrain extent (square)
+const SEG = 200;          // grid resolution
+
+// --- deterministic value-noise fbm ---------------------------------------
+function hash(x, z) {
+  let h = (x | 0) * 374761393 + (z | 0) * 668265263;
+  h = (h ^ (h >> 13)) * 1274126177;
+  return ((h ^ (h >> 16)) >>> 0) / 4294967295;
+}
+const fade = (t) => t * t * t * (t * (t * 6 - 15) + 10);
+function vnoise(x, z) {
+  const xi = Math.floor(x), zi = Math.floor(z);
+  const xf = x - xi, zf = z - zi;
+  const u = fade(xf), v = fade(zf);
+  const a = hash(xi, zi), b = hash(xi + 1, zi), c = hash(xi, zi + 1), d = hash(xi + 1, zi + 1);
+  return lerp(lerp(a, b, u), lerp(c, d, u), v);
+}
+function fbm(x, z) {
+  let f = 0, amp = 0.5, freq = 1;
+  for (let i = 0; i < 4; i++) { f += vnoise(x * freq, z * freq) * amp; freq *= 2.03; amp *= 0.5; }
+  return f;
+}
+
+// The height field. Rolling hills in the middle, a steep rise past PLAY_RADIUS
+// to fence the arena in naturally.
+export function terrainHeight(x, z) {
+  const rolling = (fbm(x * 0.017 + 11, z * 0.017 + 7) - 0.5) * 8.0;
+  const detail = (fbm(x * 0.085, z * 0.085) - 0.5) * 1.1;
+  let h = rolling + detail;
+  const d = Math.hypot(x, z);
+  if (d > PLAY_RADIUS) h += Math.pow((d - PLAY_RADIUS) / 20, 2.2) * 16;
+  return h;
+}
+
+export function terrainNormal(x, z, out = new THREE.Vector3()) {
+  const e = 0.6;
+  const hL = terrainHeight(x - e, z), hR = terrainHeight(x + e, z);
+  const hD = terrainHeight(x, z - e), hU = terrainHeight(x, z + e);
+  return out.set(hL - hR, 2 * e, hD - hU).normalize();
+}
+
+// --- ground detail texture (tiny grass speckle, tiled) -------------------
+function grassTexture() {
+  const s = 256;
+  const c = document.createElement('canvas'); c.width = c.height = s;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#4a5f2b'; ctx.fillRect(0, 0, s, s);
+  for (let i = 0; i < 4200; i++) {
+    const x = Math.random() * s, y = Math.random() * s;
+    const g = 70 + Math.random() * 90;
+    ctx.fillStyle = `rgba(${(g * 0.7) | 0},${g | 0},${(g * 0.4) | 0},${0.25 + Math.random() * 0.4})`;
+    ctx.fillRect(x, y, 1 + Math.random() * 2, 1 + Math.random() * 3);
+  }
+  // a few dirt flecks
+  for (let i = 0; i < 500; i++) {
+    ctx.fillStyle = `rgba(90,70,45,${0.2 + Math.random() * 0.3})`;
+    ctx.fillRect(Math.random() * s, Math.random() * s, 1 + Math.random() * 2, 1 + Math.random() * 2);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(60, 60);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+}
+
+// biome colors blended per-vertex by slope + height
+const C_GRASS = new THREE.Color(0x5f7a34);
+const C_GRASS_DRY = new THREE.Color(0x8a8a3e);
+const C_DIRT = new THREE.Color(0x6b5433);
+const C_ROCK = new THREE.Color(0x6a6560);
+
+export function buildTerrain(scene) {
+  const geo = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG);
+  geo.rotateX(-Math.PI / 2);
+  const pos = geo.attributes.position;
+  const colors = new Float32Array(pos.count * 3);
+  const col = new THREE.Color();
+  const n = new THREE.Vector3();
+
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), z = pos.getZ(i);
+    const h = terrainHeight(x, z);
+    pos.setY(i, h);
+    terrainNormal(x, z, n);
+    const slope = 1 - clamp01(n.y);                 // 0 flat → 1 vertical
+    const dry = clamp01((fbm(x * 0.04 + 40, z * 0.04) - 0.4) * 2); // patchy dry grass
+    col.copy(C_GRASS).lerp(C_GRASS_DRY, dry * 0.6);
+    if (slope > 0.32) col.lerp(C_DIRT, clamp01((slope - 0.32) / 0.2));
+    if (slope > 0.55) col.lerp(C_ROCK, clamp01((slope - 0.55) / 0.25));
+    if (h < -2.5) col.lerp(C_DIRT, clamp01((-2.5 - h) / 3) * 0.5); // valleys darker
+    colors[i * 3] = col.r; colors[i * 3 + 1] = col.g; colors[i * 3 + 2] = col.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geo.computeVertexNormals();
+
+  const mat = new THREE.MeshStandardMaterial({
+    vertexColors: true, map: grassTexture(), roughness: 0.96, metalness: 0.0,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.receiveShadow = true;
+  mesh.castShadow = false;
+  scene.add(mesh);
+
+  return {
+    mesh,
+    height: terrainHeight,
+    normal: terrainNormal,
+    playRadius: PLAY_RADIUS,
+    size: SIZE,
+  };
+}
