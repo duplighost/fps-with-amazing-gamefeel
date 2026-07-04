@@ -183,14 +183,35 @@ function buildJuggernaut(def) {
   // bevel it with a smaller upper block
   const upper = new THREE.Mesh(new THREE.BoxGeometry(1.28 * s, 0.42 * s, 0.66 * s), plate);
   upper.position.y = 0.9 * s; upper.castShadow = true; pelvis.add(upper);
-  // glowing molten core + cracks
+  // glowing molten core + cracks radiating across the chest
   const coreO = new THREE.Mesh(new THREE.SphereGeometry(0.2 * s, 12, 10), core);
   coreO.position.set(0, 0.52 * s, 0.36 * s); pelvis.add(coreO);
-  for (let i = 0; i < 4; i++) {
-    const cr = new THREE.Mesh(new THREE.BoxGeometry(0.05 * s, 0.34 * s, 0.02 * s), core);
-    cr.position.set(rand(-0.4, 0.4) * s, 0.5 * s + rand(-0.2, 0.2) * s, 0.37 * s);
-    cr.rotation.z = rand(-1, 1); pelvis.add(cr);
+  for (let i = 0; i < 7; i++) {
+    const cr = new THREE.Mesh(new THREE.BoxGeometry(0.045 * s, rand(0.22, 0.4) * s, 0.02 * s), core);
+    cr.position.set(rand(-0.45, 0.45) * s, 0.5 * s + rand(-0.28, 0.28) * s, 0.37 * s);
+    cr.rotation.z = rand(-1.2, 1.2); pelvis.add(cr);
   }
+  // a glowing seam under each pauldron
+  for (const sx of [-1, 1]) {
+    const seam = new THREE.Mesh(new THREE.BoxGeometry(0.34 * s, 0.04 * s, 0.5 * s), core);
+    seam.position.set(sx * 0.5 * s, 0.72 * s, 0.02 * s); seam.rotation.z = sx * 0.25; pelvis.add(seam);
+  }
+
+  // molten veins + a joint ember running down a limb (children of the bone, so
+  // they flex with the swing). reuses the emissive `core` material.
+  const addVeins = (g, len, r, n) => {
+    for (let k = 0; k < n; k++) {
+      const a = rand(-1.15, 1.15);                       // around the front of the limb
+      const y = -len * (0.14 + (k / n) * 0.72 + rand(-0.04, 0.04));
+      const h = rand(0.14, 0.28) * len;
+      const v = new THREE.Mesh(new THREE.BoxGeometry(0.035 * s, h, 0.028 * s), core);
+      v.position.set(Math.sin(a) * r * 0.92, y, Math.cos(a) * r * 0.92);
+      v.rotation.set(0, -a, rand(-0.5, 0.5));
+      g.add(v);
+    }
+    const ember = new THREE.Mesh(new THREE.SphereGeometry(r * 0.42, 8, 7), core);
+    ember.position.set(0, -len * 0.52, r * 0.5); g.add(ember);
+  };
   // massive pauldrons
   for (const sx of [-1, 1]) {
     const pa = new THREE.Mesh(new THREE.SphereGeometry(0.34 * s, 10, 8), plate);
@@ -210,12 +231,18 @@ function buildJuggernaut(def) {
   // gigantic arms
   const armL = bone(armor, 0.19 * s, 1.15 * s); armL.group.position.set(-0.78 * s, 0.86 * s, 0);
   const armR = bone(armor, 0.19 * s, 1.15 * s); armR.group.position.set(0.78 * s, 0.86 * s, 0);
-  for (const a of [armL, armR]) { const fist = new THREE.Mesh(new THREE.SphereGeometry(0.24 * s, 9, 8), plate); fist.position.y = -1.05 * s; a.group.add(fist); a.group.children[0].castShadow = true; }
+  for (const a of [armL, armR]) {
+    const fist = new THREE.Mesh(new THREE.SphereGeometry(0.24 * s, 9, 8), plate); fist.position.y = -1.05 * s; a.group.add(fist); fist.castShadow = true;
+    // molten knuckles glowing inside the fist
+    const knuck = new THREE.Mesh(new THREE.SphereGeometry(0.11 * s, 8, 7), core); knuck.position.set(0, -1.05 * s, 0.16 * s); a.group.add(knuck);
+    addVeins(a.group, 1.15 * s, 0.19 * s, 4);
+  }
   pelvis.add(armL.group, armR.group); parts.armL = armL.group; parts.armR = armR.group;
   hitMeshes.push(armL.mesh, armR.mesh);
   // thick legs
   const legL = bone(armor, 0.2 * s, hipH); legL.group.position.set(-0.34 * s, hipH, 0);
   const legR = bone(armor, 0.2 * s, hipH); legR.group.position.set(0.34 * s, hipH, 0);
+  for (const l of [legL, legR]) addVeins(l.group, hipH, 0.2 * s, 4);
   root.add(legL.group, legR.group); parts.legL = legL.group; parts.legR = legR.group;
   hitMeshes.push(legL.mesh, legR.mesh);
 
