@@ -88,14 +88,24 @@ Game feel is the sum of a hundred small responses. The big ones here:
 
 ## The horde
 
-Waves drip-spawn from the treeline and close on you from all sides. Three enemy
-types, all built from animated procedural humanoids with a full walk cycle:
+Waves drip-spawn from the treeline and close on you from all sides. Five wildly
+distinct creatures — each its own silhouette, size, signature colour, glowing
+emissive accents (so you read them at a glance and they pop against the dusk),
+signature-coloured blood, and its own gait and behaviour:
 
-- **Shamblers** — slow, tanky, arms outstretched.
-- **Runners** — fast and fragile, they sprint you down.
-- **Brutes** — heavy bruisers that soak a magazine.
+- **Husk** — ashen foot-soldier with amber eyes. The steady marcher; the backbone
+  of every wave.
+- **Stalker** — small, fast, hunched raptor-thing lit toxic green. Weaves as it
+  runs and lunges the last few metres.
+- **Juggernaut** — a towering charcoal tank with a molten-red core and cracks.
+  Slow and relentless; the ground shakes when it walks and shrugs off knockback.
+- **Wisp** — a legless hovering specter glowing cyan. Bobs and drifts over the
+  terrain, unravelling into light when killed.
+- **Bloater** — a bulbous pustular sack glowing orange. Waddles in and **ruptures**
+  on death in a second, larger burst.
 
-Each wave is bigger than the last. Clear it for a bonus, brace for the next.
+The roster unlocks and its mix ramps as the waves climb. Each wave is bigger than
+the last — clear it for a bonus, brace for the next.
 
 ## Structure
 

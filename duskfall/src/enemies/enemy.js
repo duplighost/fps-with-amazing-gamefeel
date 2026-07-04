@@ -1,7 +1,14 @@
-// The horde. Procedural humanoid creatures built from capsules/spheres, animated
-// with a walk/run cycle (swinging limbs, forward lurch, lolling head) so they
-// read as detailed, menacing 3D enemies. Three archetypes, hit-flash + blood +
-// knockback, a scripted crumple-death, and a wave manager with arcade scoring.
+// The horde. Five wildly distinct procedural creatures — each with its own
+// silhouette, size, signature colour + glowing emissive accents (so they read
+// instantly and pop against the dusk), signature-coloured blood, a bespoke gait,
+// and its own movement behaviour. Hit-flash, knockback, scripted deaths, and a
+// wave manager driving arcade scoring.
+//
+//   HUSK       — ashen foot-soldier, amber eyes. The baseline marcher.
+//   STALKER    — small, fast, hunched raptor-thing with toxic-green glow. Weaves + lunges.
+//   JUGGERNAUT — huge charcoal tank, molten-red core. Slow, ground-shaking.
+//   WISP       — legless hovering specter, cyan glow. Drifts and bobs.
+//   BLOATER    — round pustular sack, orange glow. Waddles, ruptures on death.
 
 import * as THREE from 'three';
 import { clamp, clamp01, damp, rand, randInt, pick, lerp } from '../engine/math.js';
@@ -9,57 +16,302 @@ import { clamp, clamp01, damp, rand, randInt, pick, lerp } from '../engine/math.
 const WHITE = new THREE.Color(0xffffff);
 
 const TYPES = {
-  shambler: { hp: 72, speed: 2.4, radius: 0.42, height: 1.85, damage: 13, attackCd: 1.1, score: 100, skin: 0x9aa27a, rate: 5.5, reach: 0.9 },
-  runner: { hp: 46, speed: 5.4, radius: 0.38, height: 1.72, damage: 9, attackCd: 0.85, score: 150, skin: 0xb08a6a, rate: 10, reach: 0.7 },
-  brute: { hp: 240, speed: 1.75, radius: 0.72, height: 2.55, damage: 30, attackCd: 1.5, score: 320, skin: 0x8f8f72, rate: 3.8, reach: 1.3 },
+  husk: {
+    hp: 70, speed: 2.6, radius: 0.42, height: 1.9, damage: 12, attackCd: 1.1, score: 100,
+    skin: 0x59636f, accent: 0xffab33, blood: 0x6b3b2a, rate: 5.5, reach: 0.9,
+    gait: 'walk', headY: 0.78, build: buildHusk,
+  },
+  stalker: {
+    hp: 42, speed: 6.0, radius: 0.36, height: 1.55, damage: 9, attackCd: 0.8, score: 150,
+    skin: 0x2e3b24, accent: 0x74ff2e, blood: 0x3f6a1e, rate: 12, reach: 0.7,
+    gait: 'run', headY: 0.66, weave: 2.0, lunge: true, build: buildStalker,
+  },
+  juggernaut: {
+    hp: 340, speed: 1.7, radius: 0.95, height: 2.85, damage: 34, attackCd: 1.6, score: 350,
+    skin: 0x41444f, accent: 0xff3311, blood: 0xff5a22, rate: 3.4, reach: 1.4,
+    gait: 'stomp', headY: 0.82, stomp: true, deathTrauma: 0.28, build: buildJuggernaut,
+  },
+  wisp: {
+    hp: 88, speed: 3.4, radius: 0.44, height: 2.1, damage: 14, attackCd: 1.0, score: 200,
+    skin: 0x9fd6e2, accent: 0x33ddff, blood: 0x33ddff, rate: 4, reach: 0.9,
+    gait: 'float', headY: 0.74, hover: 1.15, deathStyle: 'dissolve', build: buildWisp,
+  },
+  bloater: {
+    hp: 165, speed: 1.9, radius: 0.7, height: 2.2, damage: 20, attackCd: 1.4, score: 250,
+    skin: 0x7c7a34, accent: 0xff8a1e, blood: 0x9fb830, rate: 4.5, reach: 1.1,
+    gait: 'waddle', headY: 0.8, burst: true, build: buildBloater,
+  },
 };
 
-// --- procedural humanoid --------------------------------------------------
-function limb(mat, r, len) {
+// --- material + primitive helpers ----------------------------------------
+
+function skinMat(color, rough = 0.78, flat = false) {
+  return new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: 0.0, flatShading: flat });
+}
+// a self-lit accent that bursts through the bloom threshold at dusk
+function glowMat(color, ei = 2.6) {
+  return new THREE.MeshStandardMaterial({ color: 0x0a0a0a, emissive: color, emissiveIntensity: ei, roughness: 0.4, metalness: 0 });
+}
+// a group whose child mesh hangs down from the pivot (a bone). returns {group, mesh}
+function bone(mat, r, len, taper = 1) {
   const g = new THREE.Group();
-  const geo = new THREE.CapsuleGeometry(r, len - r * 2, 4, 8);
+  const geo = new THREE.CapsuleGeometry(r, Math.max(0.01, len - r * 2), 4, 8);
+  if (taper !== 1) geo.scale(1, 1, 1);
   const m = new THREE.Mesh(geo, mat);
-  m.position.y = -len / 2;
-  m.castShadow = true;
+  m.position.y = -len / 2; m.castShadow = true;
   g.add(m);
-  return g;
+  return { group: g, mesh: m };
 }
 
-function buildHumanoid(def, mat) {
-  const s = def.height / 1.85;
+// ==========================================================================
+// BUILDERS — each returns { root, parts, hitMeshes, skinMats, materials }
+// ==========================================================================
+
+function buildHusk(def) {
+  const s = def.height / 1.9;
+  const skin = skinMat(def.skin, 0.82);
+  const eyeM = glowMat(def.accent, 3.0);
+  const materials = [skin, eyeM];
   const root = new THREE.Group();
+  const hitMeshes = [];
 
-  const hipH = 0.95 * s;
-  const pelvis = new THREE.Group();
-  pelvis.position.y = hipH;
-  root.add(pelvis);
+  const hipH = 0.98 * s;
+  const pelvis = new THREE.Group(); pelvis.position.y = hipH; root.add(pelvis);
 
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.26 * s, 0.5 * s, 4, 10), mat);
-  torso.position.y = 0.42 * s;
-  torso.castShadow = true;
-  pelvis.add(torso);
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.25 * s, 0.52 * s, 5, 10), skin);
+  torso.position.y = 0.42 * s; torso.castShadow = true; pelvis.add(torso);
+  torso.userData.hit = 'body'; hitMeshes.push(torso);
+  // gaunt shoulders
+  for (const sx of [-1, 1]) {
+    const sh = new THREE.Mesh(new THREE.SphereGeometry(0.12 * s, 8, 7), skin);
+    sh.position.set(sx * 0.28 * s, 0.66 * s, 0); sh.castShadow = true; pelvis.add(sh);
+  }
 
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.19 * s, 12, 10), mat);
-  head.position.y = 0.85 * s;
-  head.scale.set(1, 1.12, 1.05);
-  head.castShadow = true;
-  pelvis.add(head);
-  // sunken brow / jaw hint
-  const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.16 * s, 0.08 * s, 0.14 * s), mat);
-  jaw.position.set(0, 0.76 * s, 0.12 * s);
-  pelvis.add(jaw);
+  const headG = new THREE.Group(); headG.position.y = 0.86 * s; pelvis.add(headG);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.18 * s, 12, 10), skin);
+  head.scale.set(1, 1.14, 1.06); head.castShadow = true; headG.add(head);
+  head.userData.hit = 'head'; hitMeshes.push(head);
+  const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.15 * s, 0.09 * s, 0.15 * s), skin);
+  jaw.position.set(0, -0.11 * s, 0.11 * s); headG.add(jaw);
+  for (const sx of [-1, 1]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.032 * s, 6, 6), eyeM);
+    eye.position.set(sx * 0.075 * s, 0.02 * s, 0.15 * s); headG.add(eye);
+  }
 
-  const armL = limb(mat, 0.09 * s, 0.72 * s); armL.position.set(-0.32 * s, 0.66 * s, 0); pelvis.add(armL);
-  const armR = limb(mat, 0.09 * s, 0.72 * s); armR.position.set(0.32 * s, 0.66 * s, 0); pelvis.add(armR);
-  const legL = limb(mat, 0.12 * s, hipH); legL.position.set(-0.15 * s, hipH, 0); root.add(legL);
-  const legR = limb(mat, 0.12 * s, hipH); legR.position.set(0.15 * s, hipH, 0); root.add(legR);
+  const parts = { pelvis, torso, head: headG, hipH, s };
+  const armL = bone(skin, 0.085 * s, 0.74 * s); armL.group.position.set(-0.3 * s, 0.64 * s, 0);
+  const armR = bone(skin, 0.085 * s, 0.74 * s); armR.group.position.set(0.3 * s, 0.64 * s, 0);
+  pelvis.add(armL.group, armR.group); parts.armL = armL.group; parts.armR = armR.group;
+  hitMeshes.push(armL.mesh, armR.mesh);
+  const legL = bone(skin, 0.11 * s, hipH); legL.group.position.set(-0.14 * s, hipH, 0);
+  const legR = bone(skin, 0.11 * s, hipH); legR.group.position.set(0.14 * s, hipH, 0);
+  root.add(legL.group, legR.group); parts.legL = legL.group; parts.legR = legR.group;
+  hitMeshes.push(legL.mesh, legR.mesh);
 
-  root.userData.parts = { pelvis, torso, head, armL, armR, legL, legR, hipH, s };
-  // tag hit meshes
-  torso.userData.hit = 'body'; head.userData.hit = 'head';
-  root.userData.hitMeshes = [torso, head, jaw, armL.children[0], armR.children[0], legL.children[0], legR.children[0]];
-  return root;
+  return { root, parts, hitMeshes, skinMats: [skin], materials };
 }
+
+function buildStalker(def) {
+  const s = def.height / 1.55;
+  const skin = skinMat(def.skin, 0.7, true);
+  const glow = glowMat(def.accent, 2.0);
+  const materials = [skin, glow];
+  const root = new THREE.Group();
+  const hitMeshes = [];
+
+  const hipH = 0.86 * s;
+  const pelvis = new THREE.Group(); pelvis.position.y = hipH; root.add(pelvis);
+  // torso pitched forward (raptor stance); pivot leans it in animation
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.19 * s, 0.56 * s, 5, 10), skin);
+  torso.position.set(0, 0.3 * s, 0.14 * s); torso.rotation.x = 0.8; torso.castShadow = true; pelvis.add(torso);
+  torso.userData.hit = 'body'; hitMeshes.push(torso);
+  // dorsal spine of glowing barbs
+  for (let i = 0; i < 5; i++) {
+    const b = new THREE.Mesh(new THREE.ConeGeometry(0.03 * s, 0.14 * s, 5), glow);
+    b.position.set(0, 0.16 * s + i * 0.11 * s, 0.02 * s - i * 0.12 * s);
+    b.rotation.x = -0.6; pelvis.add(b);
+  }
+  // neck thrusts head forward and low
+  const headG = new THREE.Group(); headG.position.set(0, 0.52 * s, 0.4 * s); pelvis.add(headG);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.15 * s, 10, 9), skin);
+  head.scale.set(0.9, 0.8, 1.35); head.castShadow = true; headG.add(head);
+  head.userData.hit = 'head'; hitMeshes.push(head);
+  for (const sx of [-1, 1]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.04 * s, 6, 6), glow);
+    eye.position.set(sx * 0.07 * s, 0.05 * s, 0.13 * s); headG.add(eye);
+  }
+
+  const parts = { pelvis, torso, head: headG, hipH, s };
+  // long grasping arms hung forward
+  const armL = bone(skin, 0.06 * s, 0.8 * s); armL.group.position.set(-0.2 * s, 0.5 * s, 0.14 * s); armL.group.rotation.x = -0.5;
+  const armR = bone(skin, 0.06 * s, 0.8 * s); armR.group.position.set(0.2 * s, 0.5 * s, 0.14 * s); armR.group.rotation.x = -0.5;
+  pelvis.add(armL.group, armR.group); parts.armL = armL.group; parts.armR = armR.group;
+  hitMeshes.push(armL.mesh, armR.mesh);
+  // digitigrade legs: a bent knee baked in (thigh forward, shin back)
+  const mkLeg = (sx) => {
+    const g = new THREE.Group(); g.position.set(sx * 0.13 * s, hipH, 0);
+    const thigh = new THREE.Mesh(new THREE.CapsuleGeometry(0.07 * s, 0.34 * s, 4, 8), skin);
+    thigh.position.set(0, -0.22 * s, 0.1 * s); thigh.rotation.x = 0.5; thigh.castShadow = true; g.add(thigh);
+    const shin = new THREE.Mesh(new THREE.CapsuleGeometry(0.055 * s, 0.36 * s, 4, 8), skin);
+    shin.position.set(0, -0.55 * s, -0.02 * s); shin.rotation.x = -0.35; shin.castShadow = true; g.add(shin);
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.09 * s, 0.05 * s, 0.24 * s), skin);
+    foot.position.set(0, -0.82 * s, 0.06 * s); g.add(foot);
+    hitMeshes.push(thigh, shin);
+    return g;
+  };
+  const legL = mkLeg(-1), legR = mkLeg(1);
+  root.add(legL, legR); parts.legL = legL; parts.legR = legR;
+
+  return { root, parts, hitMeshes, skinMats: [skin], materials };
+}
+
+function buildJuggernaut(def) {
+  const s = def.height / 2.85;
+  const armor = new THREE.MeshStandardMaterial({ color: def.skin, roughness: 0.5, metalness: 0.35, flatShading: true });
+  const plate = new THREE.MeshStandardMaterial({ color: 0x2a2c36, roughness: 0.45, metalness: 0.45, flatShading: true });
+  const core = glowMat(def.accent, 3.2);
+  const materials = [armor, plate, core];
+  const root = new THREE.Group();
+  const hitMeshes = [];
+
+  const hipH = 1.15 * s;
+  const pelvis = new THREE.Group(); pelvis.position.y = hipH; root.add(pelvis);
+  // huge broad chest block
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(1.1 * s, 0.95 * s, 0.72 * s), armor);
+  torso.position.y = 0.5 * s; torso.castShadow = true; pelvis.add(torso);
+  torso.userData.hit = 'body'; hitMeshes.push(torso);
+  // bevel it with a smaller upper block
+  const upper = new THREE.Mesh(new THREE.BoxGeometry(1.28 * s, 0.42 * s, 0.66 * s), plate);
+  upper.position.y = 0.9 * s; upper.castShadow = true; pelvis.add(upper);
+  // glowing molten core + cracks
+  const coreO = new THREE.Mesh(new THREE.SphereGeometry(0.2 * s, 12, 10), core);
+  coreO.position.set(0, 0.52 * s, 0.36 * s); pelvis.add(coreO);
+  for (let i = 0; i < 4; i++) {
+    const cr = new THREE.Mesh(new THREE.BoxGeometry(0.05 * s, 0.34 * s, 0.02 * s), core);
+    cr.position.set(rand(-0.4, 0.4) * s, 0.5 * s + rand(-0.2, 0.2) * s, 0.37 * s);
+    cr.rotation.z = rand(-1, 1); pelvis.add(cr);
+  }
+  // massive pauldrons
+  for (const sx of [-1, 1]) {
+    const pa = new THREE.Mesh(new THREE.SphereGeometry(0.34 * s, 10, 8), plate);
+    pa.position.set(sx * 0.72 * s, 0.95 * s, 0); pa.scale.set(1, 0.85, 1); pa.castShadow = true; pelvis.add(pa);
+  }
+  // tiny head sunk between the shoulders
+  const headG = new THREE.Group(); headG.position.y = 1.12 * s; pelvis.add(headG);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.16 * s, 10, 9), armor);
+  head.castShadow = true; headG.add(head);
+  head.userData.hit = 'head'; hitMeshes.push(head);
+  for (const sx of [-1, 1]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.03 * s, 6, 6), core);
+    eye.position.set(sx * 0.06 * s, 0.02 * s, 0.14 * s); headG.add(eye);
+  }
+
+  const parts = { pelvis, torso, head: headG, hipH, s };
+  // gigantic arms
+  const armL = bone(armor, 0.19 * s, 1.15 * s); armL.group.position.set(-0.78 * s, 0.86 * s, 0);
+  const armR = bone(armor, 0.19 * s, 1.15 * s); armR.group.position.set(0.78 * s, 0.86 * s, 0);
+  for (const a of [armL, armR]) { const fist = new THREE.Mesh(new THREE.SphereGeometry(0.24 * s, 9, 8), plate); fist.position.y = -1.05 * s; a.group.add(fist); a.group.children[0].castShadow = true; }
+  pelvis.add(armL.group, armR.group); parts.armL = armL.group; parts.armR = armR.group;
+  hitMeshes.push(armL.mesh, armR.mesh);
+  // thick legs
+  const legL = bone(armor, 0.2 * s, hipH); legL.group.position.set(-0.34 * s, hipH, 0);
+  const legR = bone(armor, 0.2 * s, hipH); legR.group.position.set(0.34 * s, hipH, 0);
+  root.add(legL.group, legR.group); parts.legL = legL.group; parts.legR = legR.group;
+  hitMeshes.push(legL.mesh, legR.mesh);
+
+  return { root, parts, hitMeshes, skinMats: [armor, plate], materials };
+}
+
+function buildWisp(def) {
+  const s = def.height / 2.1;
+  const robe = new THREE.MeshStandardMaterial({ color: def.skin, roughness: 0.9, metalness: 0, transparent: true, opacity: 0.86, emissive: def.accent, emissiveIntensity: 0.25 });
+  const core = glowMat(def.accent, 3.4);
+  const materials = [robe, core];
+  const root = new THREE.Group();
+  const hitMeshes = [];
+
+  // pelvis sits high; no legs — a tapering wraith
+  const hipH = 1.15 * s;
+  const pelvis = new THREE.Group(); pelvis.position.y = hipH; root.add(pelvis);
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.28 * s, 0.5 * s, 6, 12), robe);
+  torso.position.y = 0.28 * s; torso.castShadow = true; pelvis.add(torso);
+  torso.userData.hit = 'body'; hitMeshes.push(torso);
+  // tattered tail cone fading down to nothing
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.3 * s, 1.0 * s, 10, 1, true), robe);
+  tail.position.y = -0.35 * s; tail.rotation.x = Math.PI; pelvis.add(tail);
+  // hooded head
+  const headG = new THREE.Group(); headG.position.y = 0.72 * s; pelvis.add(headG);
+  const hood = new THREE.Mesh(new THREE.ConeGeometry(0.22 * s, 0.4 * s, 10), robe);
+  hood.position.y = 0.05 * s; hood.castShadow = true; headG.add(hood);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.15 * s, 10, 9), core);
+  head.material = core; head.position.y = -0.02 * s; headG.add(head);
+  head.userData.hit = 'head'; hitMeshes.push(head);
+  // glowing chest core
+  const coreO = new THREE.Mesh(new THREE.SphereGeometry(0.13 * s, 10, 9), core);
+  coreO.position.set(0, 0.3 * s, 0.16 * s); pelvis.add(coreO);
+
+  const parts = { pelvis, torso, head: headG, hipH, s, wisps: [] };
+  // drifting sleeve-arms
+  const armL = bone(robe, 0.08 * s, 0.62 * s); armL.group.position.set(-0.3 * s, 0.42 * s, 0); armL.group.rotation.z = 0.3;
+  const armR = bone(robe, 0.08 * s, 0.62 * s); armR.group.position.set(0.3 * s, 0.42 * s, 0); armR.group.rotation.z = -0.3;
+  pelvis.add(armL.group, armR.group); parts.armL = armL.group; parts.armR = armR.group;
+  hitMeshes.push(armL.mesh, armR.mesh);
+  // trailing tatters that sway
+  for (let i = 0; i < 3; i++) {
+    const t = bone(robe, 0.05 * s, (0.5 + i * 0.12) * s);
+    t.group.position.set((i - 1) * 0.16 * s, -0.1 * s, 0.05 * s);
+    pelvis.add(t.group); parts.wisps.push(t.group);
+  }
+
+  return { root, parts, hitMeshes, skinMats: [], materials, softFade: [robe] };
+}
+
+function buildBloater(def) {
+  const s = def.height / 2.2;
+  const skin = skinMat(def.skin, 0.85);
+  const sac = glowMat(def.accent, 2.4);
+  const materials = [skin, sac];
+  const root = new THREE.Group();
+  const hitMeshes = [];
+
+  const hipH = 0.72 * s;
+  const pelvis = new THREE.Group(); pelvis.position.y = hipH; root.add(pelvis);
+  // huge round belly
+  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.62 * s, 14, 12), skin);
+  belly.position.y = 0.34 * s; belly.scale.set(1.05, 0.98, 1.05); belly.castShadow = true; pelvis.add(belly);
+  belly.userData.hit = 'body'; hitMeshes.push(belly);
+  // glowing pustule sacs clustered on the body
+  const sacSpots = [[0.34, 0.5, 0.42], [-0.4, 0.3, 0.36], [0.12, 0.72, 0.34], [-0.2, 0.62, -0.4], [0.42, 0.2, -0.3], [0, 0.28, -0.5]];
+  for (const [x, y, z] of sacSpots) {
+    const p = new THREE.Mesh(new THREE.SphereGeometry(rand(0.09, 0.15) * s, 8, 7), sac);
+    p.position.set(x * s, y * s, z * s); pelvis.add(p);
+  }
+  // small head perched on top
+  const headG = new THREE.Group(); headG.position.y = 0.92 * s; pelvis.add(headG);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.17 * s, 10, 9), skin);
+  head.scale.set(1.1, 0.9, 1); head.castShadow = true; headG.add(head);
+  head.userData.hit = 'head'; hitMeshes.push(head);
+  for (const sx of [-1, 1]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.035 * s, 6, 6), sac);
+    eye.position.set(sx * 0.07 * s, 0.02 * s, 0.15 * s); headG.add(eye);
+  }
+
+  const parts = { pelvis, torso: belly, head: headG, hipH, s, belly };
+  // stubby thin arms
+  const armL = bone(skin, 0.06 * s, 0.5 * s); armL.group.position.set(-0.56 * s, 0.5 * s, 0); armL.group.rotation.z = 0.4;
+  const armR = bone(skin, 0.06 * s, 0.5 * s); armR.group.position.set(0.56 * s, 0.5 * s, 0); armR.group.rotation.z = -0.4;
+  pelvis.add(armL.group, armR.group); parts.armL = armL.group; parts.armR = armR.group;
+  hitMeshes.push(armL.mesh, armR.mesh);
+  // stubby legs
+  const legL = bone(skin, 0.1 * s, hipH); legL.group.position.set(-0.22 * s, hipH, 0);
+  const legR = bone(skin, 0.1 * s, hipH); legR.group.position.set(0.22 * s, hipH, 0);
+  root.add(legL.group, legR.group); parts.legL = legL.group; parts.legR = legR.group;
+  hitMeshes.push(legL.mesh, legR.mesh);
+
+  return { root, parts, hitMeshes, skinMats: [skin], materials };
+}
+
+// ==========================================================================
 
 export class Enemy {
   constructor(mgr, typeName, pos, hpScale, speedScale) {
@@ -81,19 +333,33 @@ export class Enemy {
     this.deathT = -1;
     this.hurtLean = 0;
     this.growlCd = rand(1, 5);
+    this.lungeCd = rand(1.5, 3.5);
+    this.lunging = 0;
+    this.weavePhase = rand(0, Math.PI * 2);
+    this.bob = 0;
+    this._stepSign = 0;
 
-    this.mat = new THREE.MeshStandardMaterial({ color: this.def.skin, roughness: 0.82, metalness: 0.0, flatShading: false });
-    this._baseColor = new THREE.Color(this.def.skin);
-    this.group = buildHumanoid(this.def, this.mat);
-    this.parts = this.group.userData.parts;
-    for (const m of this.group.userData.hitMeshes) m.userData.enemy = this;
+    const built = this.def.build(this.def);
+    this.group = built.root;
+    this.parts = built.parts;
+    this.materials = built.materials;
+    this.skinMats = built.skinMats;          // tinted white on hit-flash
+    this.softFade = built.softFade || [];    // materials with a base opacity < 1
+    this._baseColors = this.skinMats.map((m) => m.color.clone());
+    this.mat = this.materials[0];            // legacy alias
+    this.hitMeshes = built.hitMeshes;
+    this.group.userData.parts = this.parts;
+    this.group.userData.hitMeshes = this.hitMeshes;
+    for (const m of this.hitMeshes) m.userData.enemy = this;
+
+    this.pos.y = this.mgr.terrain.height(this.pos.x, this.pos.z) + (this.def.hover || 0);
     this.group.position.copy(this.pos);
     this.group.scale.setScalar(0.01);
     mgr.scene.add(this.group);
   }
 
   isHeadshot(point) {
-    return point.y > this.pos.y + this.def.height * 0.78;
+    return point.y > this.pos.y + this.def.height * (this.def.headY || 0.78);
   }
 
   takeDamage(dmg, point, dir, isHead) {
@@ -101,10 +367,10 @@ export class Enemy {
     this.health -= dmg;
     this.flash = 1;
     this.hurtLean = clamp((dir.x * Math.sin(this.facing) + dir.z * Math.cos(this.facing)), -1, 1) * 0.25;
-    this.knockback.addScaledVector(dir, isHead ? 3.5 : 2.2);
-    this.knockback.y = 0;
+    const kb = (isHead ? 3.5 : 2.2) * (this.def.gait === 'stomp' ? 0.35 : 1);
+    this.knockback.addScaledVector(dir, kb); this.knockback.y = 0;
     const pan = this.mgr.panFor(this.pos);
-    this.mgr.fx.bloodBurst(point, dir, isHead ? 1.6 : 1);
+    this.mgr.fx.bloodBurst(point, dir, isHead ? 1.6 : 1, this.def.blood);
     this.mgr.audio.enemyHit(pan);
     if (this.health <= 0) { this._die(point, dir, isHead); return true; }
     return false;
@@ -113,36 +379,25 @@ export class Enemy {
   _die(point, dir, isHead) {
     this.alive = false;
     this.deathT = 0;
-    this.knockback.addScaledVector(dir, 2.5);
+    this.knockback.addScaledVector(dir, this.def.gait === 'stomp' ? 0.8 : 2.5);
     this._fallDir = Math.atan2(dir.x, dir.z);
     const pan = this.mgr.panFor(this.pos);
-    this.mgr.fx.deathBurst(this.group.position.clone().setY(this.pos.y + this.def.height * (isHead ? 0.85 : 0.5)));
-    this.mgr.fx.addTrauma(0.12);
+    const center = this.group.position.clone().setY(this.pos.y + this.def.height * (isHead ? 0.85 : 0.5));
+    this.mgr.fx.deathBurst(center, this.def.blood);
+    if (this.def.burst) {
+      // rupture: a second, larger gas-and-gore burst
+      this.mgr.fx.deathBurst(center, this.def.blood);
+      this.mgr.fx.bloodBurst(center, new THREE.Vector3(0, 1, 0), 2.2, this.def.accent);
+      this.mgr.fx.addTrauma(0.2);
+    }
+    this.mgr.fx.addTrauma(this.def.deathTrauma || 0.12);
     this.mgr.audio.enemyDeath(pan);
     this.mgr._onKilled(this, isHead);
   }
 
   update(dt, player) {
-    // --- death: crumple to the ground, then sink + fade ---
-    if (this.deathT >= 0) {
-      this.deathT += dt;
-      const t = this.deathT;
-      const fall = clamp01(t / 0.5);
-      this.group.rotation.x = lerp(0, (this._fallDir !== undefined ? 1 : 1) * Math.PI * 0.5, easeOut(fall));
-      this.pos.addScaledVector(this.knockback, dt);
-      this.knockback.multiplyScalar(Math.exp(-6 * dt));
-      this.pos.y = this.mgr.terrain.height(this.pos.x, this.pos.z);
-      let sink = 0, fade = 1;
-      if (t > 1.4) { sink = (t - 1.4) * 0.6; fade = clamp01(1 - (t - 1.4) / 1.0); }
-      this.group.position.set(this.pos.x, this.pos.y - sink, this.pos.z);
-      this.mat.opacity = fade; this.mat.transparent = fade < 1;
-      this.flash = damp(this.flash, 0, 9, dt);
-      this._applyFlash();
-      if (t >= 2.4) this._dispose();
-      return;
-    }
+    if (this.deathT >= 0) { this._updateDeath(dt); return; }
 
-    // spawn-in
     if (this.spawnT < 1) { this.spawnT = clamp01(this.spawnT + dt * 2.4); this.group.scale.setScalar(this.spawnT); }
 
     const def = this.def;
@@ -152,45 +407,44 @@ export class Enemy {
 
     // face player
     const target = Math.atan2(dir.x, dir.z);
-    this.facing = dampAngle(this.facing, target, 6, dt);
+    this.facing = dampAngle(this.facing, target, def.gait === 'run' ? 9 : 6, dt);
     this.group.rotation.y = this.facing;
 
-    // seek + separation
+    // --- behaviour: seek + separation + per-type flavour ---
     const desired = new THREE.Vector3();
-    if (dist > def.reach + 0.4) desired.addScaledVector(dir, this.speed);
+    let spd = this.speed;
+
+    // stalker lunges: periodic bursts of speed straight at the player
+    if (def.lunge) {
+      this.lungeCd -= dt;
+      if (this.lunging > 0) { this.lunging -= dt; spd = this.speed * 2.1; }
+      else if (this.lungeCd <= 0 && dist < 16 && dist > def.reach + 1) { this.lunging = 0.5; this.lungeCd = rand(2.5, 4.5); this.mgr.audio.growl(this.mgr.panFor(this.pos)); }
+    }
+
+    if (dist > def.reach + 0.4) desired.addScaledVector(dir, spd);
+
+    // stalker/wisp weave: a sideways sine so they don't beeline
+    if (def.weave && this.lunging <= 0) {
+      this.weavePhase += dt * def.weave;
+      const perp = new THREE.Vector3(dir.z, 0, -dir.x);
+      desired.addScaledVector(perp, Math.sin(this.weavePhase) * spd * 0.6);
+    }
+
     const sep = this.mgr.separation(this, def.radius);
-    desired.addScaledVector(sep, this.speed);
-    this.vel.x = damp(this.vel.x, desired.x, 7, dt);
-    this.vel.z = damp(this.vel.z, desired.z, 7, dt);
+    desired.addScaledVector(sep, spd);
+    this.vel.x = damp(this.vel.x, desired.x, def.gait === 'run' ? 9 : 7, dt);
+    this.vel.z = damp(this.vel.z, desired.z, def.gait === 'run' ? 9 : 7, dt);
     this.pos.addScaledVector(this.vel, dt);
     this.pos.addScaledVector(this.knockback, dt);
     this.knockback.multiplyScalar(Math.exp(-7 * dt));
-    this.mgr.collideEnemy(this, def.radius);
-    this.pos.y = this.mgr.terrain.height(this.pos.x, this.pos.z);
-    this.group.position.copy(this.pos);
+    // wisps float over foliage; everything else pushes out of it
+    if (def.gait !== 'float') this.mgr.collideEnemy(this, def.radius);
+    else this.mgr.clampBounds(this);
+    this.pos.y = this.mgr.terrain.height(this.pos.x, this.pos.z) + (def.hover || 0);
 
-    // --- walk cycle animation ---
-    const moveSpd = Math.hypot(this.vel.x, this.vel.z);
-    this.phase += dt * (def.rate * 0.5 + moveSpd * def.rate * 0.12);
-    const sw = Math.sin(this.phase);
-    const p = this.parts;
-    const stride = clamp01(moveSpd / this.speed);
-    p.legL.rotation.x = sw * 0.6 * stride;
-    p.legR.rotation.x = -sw * 0.6 * stride;
-    if (this.type === 'runner') {
-      p.armL.rotation.x = sw * 0.7 * stride - 0.2;
-      p.armR.rotation.x = -sw * 0.7 * stride - 0.2;
-    } else {
-      // shamblers/brutes reach forward, arms outstretched, small sway
-      p.armL.rotation.x = -1.1 + Math.sin(this.phase * 0.7) * 0.15;
-      p.armR.rotation.x = -1.1 - Math.sin(this.phase * 0.7) * 0.15;
-      p.armL.rotation.z = 0.25; p.armR.rotation.z = -0.25;
-    }
-    p.pelvis.position.y = p.hipH + Math.abs(Math.cos(this.phase)) * 0.05 * p.s;
-    const lean = (this.type === 'runner' ? 0.35 : 0.2) + this.hurtLean;
-    p.pelvis.rotation.x = damp(p.pelvis.rotation.x, lean, 8, dt);
-    p.head.rotation.z = Math.sin(this.phase * 0.5) * (this.type === 'runner' ? 0.05 : 0.14);
-    this.hurtLean = damp(this.hurtLean, 0, 5, dt);
+    this._animate(dt, dist);
+    // apply visual bob (float/stomp) on top of pos
+    this.group.position.set(this.pos.x, this.pos.y + this.bob, this.pos.z);
 
     // attack on contact
     this.attackTimer -= dt;
@@ -198,29 +452,134 @@ export class Enemy {
       this.attackTimer = def.attackCd;
       player.takeDamage(def.damage + this.mgr.wave * 0.5, this.pos);
       this.mgr.audio.enemyAttack(this.mgr.panFor(this.pos));
-      // quick lunge/swipe pose
-      p.armL.rotation.x = -2.2; p.armR.rotation.x = -2.2;
+      if (this.parts.armL) { this.parts.armL.rotation.x = -2.4; this.parts.armR.rotation.x = -2.4; }
     }
 
     // occasional growl
     this.growlCd -= dt;
     if (this.growlCd <= 0) { this.growlCd = rand(4, 10); if (dist < 30) this.mgr.audio.growl(this.mgr.panFor(this.pos)); }
 
-    // hit flash
     this.flash = damp(this.flash, 0, 9, dt);
     this._applyFlash();
   }
 
+  _animate(dt, dist) {
+    const def = this.def, p = this.parts;
+    const moveSpd = Math.hypot(this.vel.x, this.vel.z);
+    const stride = clamp01(moveSpd / Math.max(0.5, this.speed));
+    this.phase += dt * (def.rate * 0.5 + moveSpd * def.rate * 0.12);
+    const sw = Math.sin(this.phase);
+
+    switch (def.gait) {
+      case 'run': {
+        if (p.legL) { p.legL.rotation.x = sw * 0.9 * stride + 0.2; p.legR.rotation.x = -sw * 0.9 * stride + 0.2; }
+        p.armL.rotation.x = -0.5 + sw * 0.6 * stride; p.armR.rotation.x = -0.5 - sw * 0.6 * stride;
+        p.pelvis.rotation.x = damp(p.pelvis.rotation.x, 0.15 + this.hurtLean, 8, dt);
+        p.head.rotation.z = Math.sin(this.phase * 0.7) * 0.06;
+        this.bob = Math.abs(Math.cos(this.phase)) * 0.06 * stride;
+        break;
+      }
+      case 'stomp': {
+        if (p.legL) { p.legL.rotation.x = sw * 0.5 * stride; p.legR.rotation.x = -sw * 0.5 * stride; }
+        p.armL.rotation.x = -0.15 + sw * 0.25 * stride; p.armR.rotation.x = -0.15 - sw * 0.25 * stride;
+        p.armL.rotation.z = 0.32; p.armR.rotation.z = -0.32;
+        p.pelvis.rotation.x = damp(p.pelvis.rotation.x, 0.08 + this.hurtLean, 8, dt);
+        this.bob = Math.abs(Math.cos(this.phase)) * 0.12 * stride;
+        // footfall trauma: one thump per leg-plant (sin crosses zero), when close + moving
+        const sgn = sw >= 0 ? 1 : -1;
+        if (sgn !== this._stepSign) {
+          this._stepSign = sgn;
+          if (dist < 28 && stride > 0.4) this.mgr.fx.addTrauma(0.12);
+        }
+        break;
+      }
+      case 'float': {
+        this.bob = Math.sin(this.phase * 0.8) * 0.18 + 0.05;
+        p.pelvis.rotation.z = Math.sin(this.phase * 0.5) * 0.08;
+        p.pelvis.rotation.x = damp(p.pelvis.rotation.x, 0.1 + this.hurtLean, 5, dt);
+        p.armL.rotation.x = -0.3 + Math.sin(this.phase * 0.6) * 0.25;
+        p.armR.rotation.x = -0.3 - Math.sin(this.phase * 0.6) * 0.25;
+        if (p.wisps) p.wisps.forEach((w, i) => { w.rotation.x = Math.sin(this.phase * 0.7 + i) * 0.3; w.rotation.z = Math.cos(this.phase * 0.5 + i) * 0.2; });
+        p.head.rotation.z = Math.sin(this.phase * 0.4) * 0.1;
+        break;
+      }
+      case 'waddle': {
+        if (p.legL) { p.legL.rotation.x = sw * 0.35 * stride; p.legR.rotation.x = -sw * 0.35 * stride; }
+        p.pelvis.rotation.z = Math.sin(this.phase) * 0.16 * (0.4 + stride);   // side-to-side roll
+        p.armL.rotation.z = 0.4 + Math.sin(this.phase) * 0.1; p.armR.rotation.z = -0.4 - Math.sin(this.phase) * 0.1;
+        p.armL.rotation.x = -0.1; p.armR.rotation.x = -0.1;
+        if (p.belly) { const j = 1 + Math.abs(Math.sin(this.phase)) * 0.04; p.belly.scale.set(1.05 * j, 0.98 / j, 1.05 * j); }
+        p.pelvis.rotation.x = damp(p.pelvis.rotation.x, 0.05 + this.hurtLean, 8, dt);
+        this.bob = Math.abs(Math.cos(this.phase)) * 0.03 * stride;
+        break;
+      }
+      default: { // walk (husk)
+        if (p.legL) { p.legL.rotation.x = sw * 0.6 * stride; p.legR.rotation.x = -sw * 0.6 * stride; }
+        p.armL.rotation.x = -1.1 + Math.sin(this.phase * 0.7) * 0.15;
+        p.armR.rotation.x = -1.1 - Math.sin(this.phase * 0.7) * 0.15;
+        p.armL.rotation.z = 0.25; p.armR.rotation.z = -0.25;
+        p.pelvis.rotation.x = damp(p.pelvis.rotation.x, 0.2 + this.hurtLean, 8, dt);
+        p.head.rotation.z = Math.sin(this.phase * 0.5) * 0.14;
+        this.bob = Math.abs(Math.cos(this.phase)) * 0.045 * stride;
+      }
+    }
+    this.hurtLean = damp(this.hurtLean, 0, 5, dt);
+  }
+
+  _updateDeath(dt) {
+    this.deathT += dt;
+    const t = this.deathT;
+    const def = this.def;
+    this.pos.addScaledVector(this.knockback, dt);
+    this.knockback.multiplyScalar(Math.exp(-6 * dt));
+    let fade = 1, sink = 0;
+
+    if (def.deathStyle === 'dissolve') {
+      // wisps unravel: rise slightly, spin, and fade out fast
+      const k = clamp01(t / 0.9);
+      this.group.rotation.y += dt * 3;
+      this.group.scale.setScalar(this.spawnT * (1 - k * 0.4));
+      fade = 1 - k;
+      this.pos.y = this.mgr.terrain.height(this.pos.x, this.pos.z) + (def.hover || 0) + k * 0.6;
+      this.group.position.set(this.pos.x, this.pos.y, this.pos.z);
+      this._setOpacity(fade);
+      this.flash = damp(this.flash, 0, 9, dt); this._applyFlash();
+      if (t >= 1.0) this._dispose();
+      return;
+    }
+
+    // default: crumple to the ground, then sink + fade
+    const fallAmt = clamp01(t / 0.5);
+    this.group.rotation.x = lerp(0, Math.PI * 0.5, easeOut(fallAmt));
+    this.pos.y = this.mgr.terrain.height(this.pos.x, this.pos.z);
+    if (t > 1.4) { sink = (t - 1.4) * 0.6; fade = clamp01(1 - (t - 1.4) / 1.0); }
+    this.group.position.set(this.pos.x, this.pos.y - sink, this.pos.z);
+    this._setOpacity(fade);
+    this.flash = damp(this.flash, 0, 9, dt); this._applyFlash();
+    if (t >= 2.4) this._dispose();
+  }
+
+  _setOpacity(o) {
+    for (const m of this.materials) {
+      const base = this.softFade.includes(m) ? 0.86 : 1;
+      m.opacity = o * base;
+      m.transparent = o < 1 || base < 1;
+    }
+  }
+
   _applyFlash() {
-    this.mat.color.copy(this._baseColor).lerp(WHITE, this.flash * 0.9);
-    this.mat.emissive = this.mat.emissive || new THREE.Color();
-    this.mat.emissive.setRGB(this.flash * 0.5, this.flash * 0.15, this.flash * 0.12);
+    for (let i = 0; i < this.skinMats.length; i++) {
+      const m = this.skinMats[i];
+      m.color.copy(this._baseColors[i]).lerp(WHITE, this.flash * 0.9);
+      if (!m.emissive) m.emissive = new THREE.Color();
+      m.emissive.setRGB(this.flash * 0.5, this.flash * 0.15, this.flash * 0.12);
+    }
   }
 
   _dispose() {
     this.mgr._remove(this);
     this.group.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
-    this.mat.dispose();
+    for (const m of this.materials) m.dispose();
     this.mgr.scene.remove(this.group);
   }
 }
@@ -247,7 +606,11 @@ export class EnemyManager {
   }
 
   reset() {
-    for (const e of this.enemies) { e.group.traverse((o) => { if (o.geometry) o.geometry.dispose(); }); e.mat.dispose(); this.scene.remove(e.group); }
+    for (const e of this.enemies) {
+      e.group.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+      for (const m of e.materials) m.dispose();
+      this.scene.remove(e.group);
+    }
     this.enemies = []; this.wave = 0; this.score = 0; this.kills = 0;
     this.spawnQueue = []; this.betweenWaves = 0; this.active = false;
   }
@@ -256,17 +619,22 @@ export class EnemyManager {
 
   _startWave(n) {
     this.wave = n;
-    const count = Math.min(6 + n * 3, 40);
-    const runnerR = clamp(0.1 + n * 0.05, 0, 0.5);
-    const bruteR = n >= 3 ? clamp(0.06 + n * 0.02, 0, 0.22) : 0;
+    const count = Math.min(6 + n * 3, 42);
     const hpScale = 1 + (n - 1) * 0.14;
     const speedScale = 1 + (n - 1) * 0.03;
+    // weighted spawn pool, unlocking + ramping variety as waves climb
+    const pool = [['husk', Math.max(0.5, 2.4 - n * 0.18)]];
+    if (n >= 1) pool.push(['stalker', clamp(0.4 + n * 0.12, 0, 1.6)]);
+    if (n >= 2) pool.push(['wisp', clamp(0.2 + (n - 2) * 0.1, 0, 0.9)]);
+    if (n >= 3) pool.push(['juggernaut', clamp(0.15 + (n - 3) * 0.06, 0, 0.6)]);
+    if (n >= 4) pool.push(['bloater', clamp(0.2 + (n - 4) * 0.08, 0, 0.8)]);
+    const total = pool.reduce((a, b) => a + b[1], 0);
+
     this.spawnQueue = [];
     for (let i = 0; i < count; i++) {
-      let t = 'shambler';
-      const r = Math.random();
-      if (r < bruteR) t = 'brute'; else if (r < bruteR + runnerR) t = 'runner';
-      this.spawnQueue.push({ t, hpScale, speedScale, delay: (this.spawnQueue.length) * rand(0.25, 0.55) });
+      let r = Math.random() * total, t = pool[0][0];
+      for (const [name, w] of pool) { if (r < w) { t = name; break; } r -= w; }
+      this.spawnQueue.push({ t, hpScale, speedScale, delay: this.spawnQueue.length * rand(0.25, 0.55) });
     }
     this.spawnTimer = 0;
     if (this.onWaveStart) this.onWaveStart(n);
@@ -274,12 +642,10 @@ export class EnemyManager {
   }
 
   spawnNow(item) {
-    // emerge from the treeline: a random angle at the arena edge, around the player
     const a = rand(0, Math.PI * 2);
     const r = this.boundary * rand(0.82, 0.98);
-    let x = this.player.pos.x + Math.cos(a) * (r - Math.hypot(this.player.pos.x, this.player.pos.z) * 0);
+    let x = this.player.pos.x + Math.cos(a) * r;
     let z = this.player.pos.z + Math.sin(a) * r;
-    // keep inside the arena
     const dr = Math.hypot(x, z);
     if (dr > this.boundary - 2) { const k = (this.boundary - 2) / dr; x *= k; z *= k; }
     const pos = new THREE.Vector3(x, this.terrain.height(x, z), z);
@@ -325,12 +691,15 @@ export class EnemyManager {
   }
 
   collideEnemy(e, r) {
-    // push out of foliage colliders + keep in bounds
     for (const c of this.colliders) {
       const dx = e.pos.x - c.x, dz = e.pos.z - c.z;
       const min = c.r + r; const d2 = dx * dx + dz * dz;
       if (d2 < min * min && d2 > 1e-5) { const d = Math.sqrt(d2); e.pos.x = c.x + dx / d * min; e.pos.z = c.z + dz / d * min; }
     }
+    this.clampBounds(e);
+  }
+
+  clampBounds(e) {
     const dr = Math.hypot(e.pos.x, e.pos.z);
     const b = this.boundary + 3;
     if (dr > b) { const k = b / dr; e.pos.x *= k; e.pos.z *= k; }
@@ -345,7 +714,7 @@ export class EnemyManager {
 
   raycastTargets() {
     const arr = [];
-    for (const e of this.enemies) if (e.alive) for (const m of e.group.userData.hitMeshes) arr.push(m);
+    for (const e of this.enemies) if (e.alive) for (const m of e.hitMeshes) arr.push(m);
     return arr;
   }
 
