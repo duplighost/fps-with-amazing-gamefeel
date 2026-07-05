@@ -17,33 +17,33 @@ const WHITE = new THREE.Color(0xffffff);
 
 const TYPES = {
   husk: {
-    hp: 70, speed: 2.6, radius: 0.42, height: 1.9, damage: 12, attackCd: 1.1, score: 100,
+    hp: 70, speed: 4.0, radius: 0.42, height: 1.9, damage: 12, attackCd: 1.1, score: 100,
     skin: 0x59636f, accent: 0xffab33, blood: 0x6b3b2a, rate: 5.5, reach: 0.9,
     gait: 'walk', headY: 0.78, build: buildHusk,
   },
   stalker: {
-    hp: 42, speed: 6.0, radius: 0.36, height: 1.55, damage: 9, attackCd: 0.8, score: 150,
-    skin: 0x2e3b24, accent: 0x74ff2e, blood: 0x3f6a1e, rate: 12, reach: 0.7,
+    hp: 42, speed: 8.4, radius: 0.36, height: 1.55, damage: 9, attackCd: 0.8, score: 150,
+    skin: 0x44552f, accent: 0x74ff2e, blood: 0x3f6a1e, rate: 12, reach: 0.7,
     gait: 'run', headY: 0.66, weave: 2.0, lunge: true, build: buildStalker,
   },
   juggernaut: {
-    hp: 340, speed: 1.7, radius: 0.95, height: 2.85, damage: 34, attackCd: 1.6, score: 350,
+    hp: 340, speed: 2.4, radius: 0.95, height: 2.85, damage: 34, attackCd: 1.6, score: 350,
     skin: 0x41444f, accent: 0xff3311, blood: 0xff5a22, rate: 3.4, reach: 1.4,
     gait: 'stomp', headY: 0.82, stomp: true, deathTrauma: 0.28, build: buildJuggernaut,
   },
   wisp: {
-    hp: 88, speed: 3.4, radius: 0.44, height: 2.1, damage: 14, attackCd: 1.0, score: 200,
+    hp: 88, speed: 4.8, radius: 0.44, height: 2.1, damage: 14, attackCd: 1.0, score: 200,
     skin: 0x9fd6e2, accent: 0x33ddff, blood: 0x33ddff, rate: 4, reach: 0.9,
     gait: 'float', headY: 0.74, hover: 1.15, deathStyle: 'dissolve', build: buildWisp,
   },
   bloater: {
-    hp: 165, speed: 1.9, radius: 0.7, height: 2.2, damage: 20, attackCd: 1.4, score: 250,
+    hp: 165, speed: 2.7, radius: 0.7, height: 2.2, damage: 20, attackCd: 1.4, score: 250,
     skin: 0x7c7a34, accent: 0xff8a1e, blood: 0x9fb830, rate: 4.5, reach: 1.1,
     gait: 'waddle', headY: 0.8, burst: true, build: buildBloater,
   },
   // --- BOSS: a towering molten titan that slams and calls in reinforcements ---
   colossus: {
-    hp: 1600, speed: 2.2, radius: 1.7, height: 5.0, damage: 42, attackCd: 2.4, score: 3000,
+    hp: 1600, speed: 2.9, radius: 1.7, height: 5.0, damage: 42, attackCd: 2.4, score: 3000,
     skin: 0x4a3a3e, accent: 0xff4416, blood: 0xff6a22, rate: 2.4, reach: 3.4,
     gait: 'stomp', headY: 0.9, stomp: true, deathTrauma: 0.7, boss: true, name: 'THE COLOSSUS',
     build: buildColossus,
@@ -52,22 +52,44 @@ const TYPES = {
 
 // --- material + primitive helpers ----------------------------------------
 
-function skinMat(color, rough = 0.78, flat = false) {
-  return new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: 0.0, flatShading: flat });
+// Skin is FLAT-SHADED by default so creatures read as faceted low-poly art
+// (matching the trees/rocks), not smooth grey cylinders.
+function skinMat(color, rough = 0.85) {
+  return new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: 0.0, flatShading: true });
 }
 // a self-lit accent that bursts through the bloom threshold at dusk
 function glowMat(color, ei = 2.6) {
   return new THREE.MeshStandardMaterial({ color: 0x0a0a0a, emissive: color, emissiveIntensity: ei, roughness: 0.4, metalness: 0 });
 }
-// a group whose child mesh hangs down from the pivot (a bone). returns {group, mesh}
-function bone(mat, r, len, taper = 1) {
+function shade(hex, amt) { return new THREE.Color(hex).lerp(new THREE.Color(0x000000), amt).getHex(); }
+
+// A bone: a tapered, faceted limb (hexagonal cross-section) with a chunky joint
+// at the pivot and a knuckle/knob at the end — reads as a real limb, not a pipe.
+// returns {group, mesh}; mesh is the tapered shaft used for hit detection.
+function bone(mat, rTop, len, rBottom = null) {
+  const rb = rBottom == null ? rTop * 0.68 : rBottom;
   const g = new THREE.Group();
-  const geo = new THREE.CapsuleGeometry(r, Math.max(0.01, len - r * 2), 4, 8);
-  if (taper !== 1) geo.scale(1, 1, 1);
+  const geo = new THREE.CylinderGeometry(rTop, rb, len, 6, 1);
+  geo.translate(0, -len / 2, 0);
   const m = new THREE.Mesh(geo, mat);
-  m.position.y = -len / 2; m.castShadow = true;
-  g.add(m);
+  m.castShadow = true; g.add(m);
+  const joint = new THREE.Mesh(new THREE.IcosahedronGeometry(rTop * 1.08, 0), mat);
+  joint.castShadow = true; g.add(joint);
+  const knob = new THREE.Mesh(new THREE.IcosahedronGeometry(rb * 1.35, 0), mat);
+  knob.position.y = -len; knob.castShadow = true; g.add(knob);
   return { group: g, mesh: m };
+}
+
+// A little cluster of claws (angular cones) fanned around a point, facing +z/down.
+function claws(mat, n, size, spread) {
+  const g = new THREE.Group();
+  for (let i = 0; i < n; i++) {
+    const c = new THREE.Mesh(new THREE.ConeGeometry(size * 0.34, size, 4), mat);
+    c.position.set((i - (n - 1) / 2) * spread, -size * 0.4, 0);
+    c.rotation.x = Math.PI * 0.62; c.castShadow = true;
+    g.add(c);
+  }
+  return g;
 }
 
 // ==========================================================================
@@ -76,93 +98,134 @@ function bone(mat, r, len, taper = 1) {
 
 function buildHusk(def) {
   const s = def.height / 1.9;
-  const skin = skinMat(def.skin, 0.82);
-  const eyeM = glowMat(def.accent, 3.0);
-  const materials = [skin, eyeM];
+  const skin = skinMat(def.skin, 0.85);
+  const bone_ = skinMat(shade(def.skin, 0.42), 0.8);   // darker bony detail
+  const eyeM = glowMat(def.accent, 3.2);
+  const materials = [skin, bone_, eyeM];
   const root = new THREE.Group();
   const hitMeshes = [];
 
   const hipH = 0.98 * s;
   const pelvis = new THREE.Group(); pelvis.position.y = hipH; root.add(pelvis);
 
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.25 * s, 0.52 * s, 5, 10), skin);
-  torso.position.y = 0.42 * s; torso.castShadow = true; pelvis.add(torso);
+  // gaunt, hunched ribcage torso (faceted, tapered to a thin waist)
+  const torso = new THREE.Mesh(new THREE.IcosahedronGeometry(0.3 * s, 1), skin);
+  torso.scale.set(0.92, 1.28, 0.68); torso.position.set(0, 0.42 * s, 0.02 * s);
+  torso.castShadow = true; pelvis.add(torso);
   torso.userData.hit = 'body'; hitMeshes.push(torso);
-  // gaunt shoulders
+  // exposed ribs
+  for (let i = 0; i < 3; i++) {
+    const rib = new THREE.Mesh(new THREE.TorusGeometry(0.17 * s - i * 0.012 * s, 0.018 * s, 4, 8, Math.PI), bone_);
+    rib.position.set(0, 0.55 * s - i * 0.12 * s, 0.13 * s); rib.rotation.x = Math.PI / 2 + 0.3; pelvis.add(rib);
+  }
+  // clavicle / bony shoulders
   for (const sx of [-1, 1]) {
-    const sh = new THREE.Mesh(new THREE.SphereGeometry(0.12 * s, 8, 7), skin);
-    sh.position.set(sx * 0.28 * s, 0.66 * s, 0); sh.castShadow = true; pelvis.add(sh);
+    const sh = new THREE.Mesh(new THREE.IcosahedronGeometry(0.12 * s, 0), bone_);
+    sh.position.set(sx * 0.27 * s, 0.68 * s, 0); sh.castShadow = true; pelvis.add(sh);
   }
 
-  const headG = new THREE.Group(); headG.position.y = 0.86 * s; pelvis.add(headG);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.18 * s, 12, 10), skin);
-  head.scale.set(1, 1.14, 1.06); head.castShadow = true; headG.add(head);
+  // skull head: angular cranium + jutting jaw + brow ridge, sunk on a thin neck
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.06 * s, 0.08 * s, 0.16 * s, 6), skin);
+  neck.position.y = 0.76 * s; pelvis.add(neck);
+  const headG = new THREE.Group(); headG.position.set(0, 0.9 * s, 0.03 * s); pelvis.add(headG);
+  const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.17 * s, 1), skin);
+  head.scale.set(0.92, 1.05, 1.1); head.castShadow = true; headG.add(head);
   head.userData.hit = 'head'; hitMeshes.push(head);
-  const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.15 * s, 0.09 * s, 0.15 * s), skin);
-  jaw.position.set(0, -0.11 * s, 0.11 * s); headG.add(jaw);
+  const brow = new THREE.Mesh(new THREE.BoxGeometry(0.2 * s, 0.05 * s, 0.08 * s), bone_);
+  brow.position.set(0, 0.05 * s, 0.13 * s); brow.rotation.x = -0.2; headG.add(brow);
+  const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.15 * s, 0.08 * s, 0.16 * s), skin);
+  jaw.position.set(0, -0.12 * s, 0.1 * s); jaw.rotation.x = 0.15; headG.add(jaw);
   for (const sx of [-1, 1]) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.032 * s, 6, 6), eyeM);
-    eye.position.set(sx * 0.075 * s, 0.02 * s, 0.15 * s); headG.add(eye);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.03 * s, 6, 6), eyeM);
+    eye.position.set(sx * 0.07 * s, 0.0, 0.13 * s); headG.add(eye);
   }
 
   const parts = { pelvis, torso, head: headG, hipH, s };
-  const armL = bone(skin, 0.085 * s, 0.74 * s); armL.group.position.set(-0.3 * s, 0.64 * s, 0);
-  const armR = bone(skin, 0.085 * s, 0.74 * s); armR.group.position.set(0.3 * s, 0.64 * s, 0);
-  pelvis.add(armL.group, armR.group); parts.armL = armL.group; parts.armR = armR.group;
-  hitMeshes.push(armL.mesh, armR.mesh);
-  const legL = bone(skin, 0.11 * s, hipH); legL.group.position.set(-0.14 * s, hipH, 0);
-  const legR = bone(skin, 0.11 * s, hipH); legR.group.position.set(0.14 * s, hipH, 0);
+  // long gangly arms ending in claws
+  for (const sx of [-1, 1]) {
+    const arm = bone(skin, 0.08 * s, 0.76 * s, 0.05 * s);
+    arm.group.position.set(sx * 0.28 * s, 0.66 * s, 0);
+    arm.group.add(placedClaws(bone_, 4, 0.12 * s, 0.06 * s, -0.76 * s));
+    pelvis.add(arm.group); parts[sx < 0 ? 'armL' : 'armR'] = arm.group; hitMeshes.push(arm.mesh);
+  }
+  // legs
+  const legL = bone(skin, 0.11 * s, hipH, 0.07 * s); legL.group.position.set(-0.14 * s, hipH, 0);
+  const legR = bone(skin, 0.11 * s, hipH, 0.07 * s); legR.group.position.set(0.14 * s, hipH, 0);
+  for (const [l, sx] of [[legL, -1], [legR, 1]]) {
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.11 * s, 0.06 * s, 0.24 * s), bone_);
+    foot.position.set(0, -hipH + 0.03 * s, 0.06 * s); l.group.add(foot);
+  }
   root.add(legL.group, legR.group); parts.legL = legL.group; parts.legR = legR.group;
   hitMeshes.push(legL.mesh, legR.mesh);
 
   return { root, parts, hitMeshes, skinMats: [skin], materials };
 }
 
+// A claw cluster placed at the end of a limb group (y = endY).
+function placedClaws(mat, n, size, spread, endY) {
+  const g = claws(mat, n, size, spread);
+  g.position.set(0, endY, 0.02);
+  return g;
+}
+
 function buildStalker(def) {
   const s = def.height / 1.55;
-  const skin = skinMat(def.skin, 0.7, true);
-  const glow = glowMat(def.accent, 2.0);
-  const materials = [skin, glow];
+  const skin = skinMat(def.skin, 0.7);
+  const belly = skinMat(shade(def.skin, 0.35), 0.7);
+  const glow = glowMat(def.accent, 2.1);
+  const materials = [skin, belly, glow];
   const root = new THREE.Group();
   const hitMeshes = [];
 
   const hipH = 0.86 * s;
   const pelvis = new THREE.Group(); pelvis.position.y = hipH; root.add(pelvis);
-  // torso pitched forward (raptor stance); pivot leans it in animation
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.19 * s, 0.56 * s, 5, 10), skin);
-  torso.position.set(0, 0.3 * s, 0.14 * s); torso.rotation.x = 0.8; torso.castShadow = true; pelvis.add(torso);
+  // lean, angular torso pitched forward (raptor stance)
+  const torso = new THREE.Mesh(new THREE.IcosahedronGeometry(0.24 * s, 1), skin);
+  torso.scale.set(0.8, 0.82, 1.5); torso.position.set(0, 0.28 * s, 0.18 * s); torso.rotation.x = 0.5;
+  torso.castShadow = true; pelvis.add(torso);
   torso.userData.hit = 'body'; hitMeshes.push(torso);
-  // dorsal spine of glowing barbs
-  for (let i = 0; i < 5; i++) {
-    const b = new THREE.Mesh(new THREE.ConeGeometry(0.03 * s, 0.14 * s, 5), glow);
-    b.position.set(0, 0.16 * s + i * 0.11 * s, 0.02 * s - i * 0.12 * s);
-    b.rotation.x = -0.6; pelvis.add(b);
+  // a long tail counterbalancing the lunge
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.12 * s, 0.95 * s, 5), skin);
+  tail.position.set(0, 0.2 * s, -0.5 * s); tail.rotation.x = Math.PI / 2 - 0.35; tail.castShadow = true; pelvis.add(tail);
+  // dorsal spine of glowing barbs, tallest over the shoulders
+  for (let i = 0; i < 6; i++) {
+    const h = (0.18 - Math.abs(i - 2) * 0.03) * s;
+    const barb = new THREE.Mesh(new THREE.ConeGeometry(0.035 * s, h, 4), glow);
+    barb.position.set(0, 0.34 * s - i * 0.05 * s, 0.12 * s - i * 0.14 * s);
+    barb.rotation.x = -0.5; pelvis.add(barb);
   }
-  // neck thrusts head forward and low
-  const headG = new THREE.Group(); headG.position.set(0, 0.52 * s, 0.4 * s); pelvis.add(headG);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.15 * s, 10, 9), skin);
-  head.scale.set(0.9, 0.8, 1.35); head.castShadow = true; headG.add(head);
-  head.userData.hit = 'head'; hitMeshes.push(head);
+  // elongated angular muzzle-head thrust forward and low, with a maw + fangs
+  const headG = new THREE.Group(); headG.position.set(0, 0.5 * s, 0.42 * s); pelvis.add(headG);
+  const skull = new THREE.Mesh(new THREE.IcosahedronGeometry(0.13 * s, 0), skin);
+  skull.scale.set(0.85, 0.8, 1.0); skull.castShadow = true; headG.add(skull);
+  const snout = new THREE.Mesh(new THREE.ConeGeometry(0.09 * s, 0.28 * s, 4), skin);
+  snout.position.set(0, -0.01 * s, 0.18 * s); snout.rotation.x = Math.PI / 2; snout.castShadow = true; headG.add(snout);
+  skull.userData.hit = 'head'; hitMeshes.push(skull);
+  const maw = new THREE.Mesh(new THREE.BoxGeometry(0.11 * s, 0.03 * s, 0.22 * s), belly);
+  maw.position.set(0, -0.05 * s, 0.14 * s); headG.add(maw);
   for (const sx of [-1, 1]) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.04 * s, 6, 6), glow);
-    eye.position.set(sx * 0.07 * s, 0.05 * s, 0.13 * s); headG.add(eye);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.035 * s, 6, 6), glow);
+    eye.position.set(sx * 0.06 * s, 0.05 * s, 0.06 * s); headG.add(eye);
   }
 
   const parts = { pelvis, torso, head: headG, hipH, s };
-  // long grasping arms hung forward
-  const armL = bone(skin, 0.06 * s, 0.8 * s); armL.group.position.set(-0.2 * s, 0.5 * s, 0.14 * s); armL.group.rotation.x = -0.5;
-  const armR = bone(skin, 0.06 * s, 0.8 * s); armR.group.position.set(0.2 * s, 0.5 * s, 0.14 * s); armR.group.rotation.x = -0.5;
-  pelvis.add(armL.group, armR.group); parts.armL = armL.group; parts.armR = armR.group;
-  hitMeshes.push(armL.mesh, armR.mesh);
-  // digitigrade legs: a bent knee baked in (thigh forward, shin back)
+  // long grasping arms hung forward, tipped with claws
+  for (const sx of [-1, 1]) {
+    const arm = bone(skin, 0.055 * s, 0.82 * s, 0.035 * s);
+    arm.group.position.set(sx * 0.19 * s, 0.42 * s, 0.16 * s); arm.group.rotation.x = -0.5;
+    arm.group.add(placedClaws(glow, 3, 0.11 * s, 0.05 * s, -0.82 * s));
+    pelvis.add(arm.group); parts[sx < 0 ? 'armL' : 'armR'] = arm.group; hitMeshes.push(arm.mesh);
+  }
+  // digitigrade legs with a baked knee and a clawed foot
   const mkLeg = (sx) => {
     const g = new THREE.Group(); g.position.set(sx * 0.13 * s, hipH, 0);
-    const thigh = new THREE.Mesh(new THREE.CapsuleGeometry(0.07 * s, 0.34 * s, 4, 8), skin);
-    thigh.position.set(0, -0.22 * s, 0.1 * s); thigh.rotation.x = 0.5; thigh.castShadow = true; g.add(thigh);
-    const shin = new THREE.Mesh(new THREE.CapsuleGeometry(0.055 * s, 0.36 * s, 4, 8), skin);
-    shin.position.set(0, -0.55 * s, -0.02 * s); shin.rotation.x = -0.35; shin.castShadow = true; g.add(shin);
-    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.09 * s, 0.05 * s, 0.24 * s), skin);
-    foot.position.set(0, -0.82 * s, 0.06 * s); g.add(foot);
+    const thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.08 * s, 0.055 * s, 0.36 * s, 6), skin);
+    thigh.position.set(0, -0.2 * s, 0.1 * s); thigh.rotation.x = 0.5; thigh.castShadow = true; g.add(thigh);
+    const shin = new THREE.Mesh(new THREE.CylinderGeometry(0.05 * s, 0.03 * s, 0.4 * s, 6), skin);
+    shin.position.set(0, -0.54 * s, -0.03 * s); shin.rotation.x = -0.38; shin.castShadow = true; g.add(shin);
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.08 * s, 0.045 * s, 0.2 * s), skin);
+    foot.position.set(0, -0.8 * s, 0.08 * s); g.add(foot);
+    foot.add(placedClaws(glow, 3, 0.07 * s, 0.045 * s, 0.11 * s));
     hitMeshes.push(thigh, shin);
     return g;
   };
