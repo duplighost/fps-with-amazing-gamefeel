@@ -3,7 +3,7 @@
 // engine, an animated humanoid horde, and an arcade point/combo system.
 
 import * as THREE from 'three';
-import { clamp, clamp01, damp } from './engine/math.js';
+import { clamp, clamp01, damp, rand } from './engine/math.js';
 import { Input } from './engine/input.js';
 import { Audio } from './engine/audio.js';
 import { FX } from './engine/fx.js';
@@ -105,6 +105,8 @@ class Game {
     this.pickups.groundAt = this.world.groundAt;
     this.projectiles.groundAt = this.world.groundAt;
     this._pondWasFrozen = false;
+    this._meteors = [];            // wurm-wave surface strikes [{x,z,y,t}]
+    this._meteorCd = 1; this._surgeCd = 0.5;
     this._dashHitSet = new Set();     // enemies struck by the current dash
     this._dashKills = 0; this._dashFinishers = 0;
     this._dashPin = null;             // { e, t } — a killed corpse skewered in front
@@ -192,8 +194,12 @@ class Game {
     this.enemies.onCountChange = (n) => this.hud.setEnemies(n);
     this.enemies.onWaveStart = (n, isBoss) => {
       this.hud.setWave(n);
-      if (isBoss) this.hud.banner('⚠  BOSS  ⚠', (n >= 10 ? 'THE YETI' : 'THE COLOSSUS') + ' awakens', '#ff6a3a');
-      else this.hud.banner('WAVE ' + n, (n % 5 === 4) ? 'brace — a boss looms next' : 'incoming', '#ffce7a');
+      if (isBoss) {
+        const names = { colossus: 'THE COLOSSUS', yeti: 'THE YETI', wurm: 'THE WURM', tempest: 'THE TEMPEST' };
+        const subs = { colossus: 'awakens', yeti: 'brings the whiteout', wurm: 'is beneath you — get underground', tempest: 'owns the sky — get OFF the ground' };
+        const t = this.enemies.bossTypeFor(n);
+        this.hud.banner('⚠  BOSS  ⚠', names[t] + ' ' + subs[t], '#ff6a3a');
+      } else this.hud.banner('WAVE ' + n, (n % 5 === 4) ? 'brace — a boss looms next' : 'incoming', '#ffce7a');
     };
     this.enemies.onWaveCleared = (n) => {
       const bonus = n * 100;
@@ -309,6 +315,7 @@ class Game {
     this.hud.setGrenades(this.grenades, this.maxGrenades);
     this.season = 0; this._stormBoost = 0; this.world.setSeason(0, 0, 0);   // back to summer
     this._pondWasFrozen = this.world.pond.frozen;
+    this._meteors.length = 0; this._meteorCd = 1; this._surgeCd = 0.5;
     this._dashHitSet.clear(); this._dashPin = null; this._dashAge = 0;
     this.fx.trauma = 0; this.fx.hitstop = 0; this.fx.slowmo = 1;
     this.maxHealth = MAX_HEALTH; this.slowmoCap = 1; this.upgradeStacks = {};
@@ -404,6 +411,7 @@ class Game {
       if (gdt > 0) {
         this.enemies.update(gdt);
         this._updateProjectiles(gdt);
+        this._updateBossHazards(gdt);
         this.world.update(gdt, this.controller.pos);
         this._regen(gdt);
         if (this.comboTimer > 0) { this.comboTimer -= gdt; if (this.comboTimer <= 0) this.combo = 0; }
@@ -538,6 +546,67 @@ class Game {
       // if the browser rejects the re-lock, fall back to the pause menu (click to
       // resume re-requests it) rather than stranding the run playing-but-unlocked
       if (pr && pr.catch) pr.catch(() => { if (this.state === 'playing') { this.state = 'paused'; this.hud.showPause(); } });
+    }
+  }
+
+  // Boss arena hazards. THE WURM's wave rains meteors on the SURFACE (get
+  // underground, where the fight is). THE TEMPEST charges the open GROUND (get
+  // up on the ring/islands — dash i-frames also carry you across safely).
+  _updateBossHazards(dt) {
+    const boss = this.enemies.boss;
+    const isWurm = boss && boss.alive && boss.type === 'wurm';
+    const isTempest = boss && boss.alive && boss.type === 'tempest';
+    const under = this.world.isUnder(this.player.pos.x, this.player.pos.z, this.player.pos.y + 0.5);
+
+    if (isWurm && !under) {
+      this._meteorCd -= dt;
+      if (this._meteorCd <= 0) {
+        this._meteorCd = rand(1.0, 1.7);
+        const a = Math.random() * Math.PI * 2, d = Math.random() * 6.5;
+        const x = this.player.pos.x + Math.cos(a) * d, z = this.player.pos.z + Math.sin(a) * d;
+        const y = this.world.terrain.height(x, z);
+        this._meteors.push({ x, z, y, t: 0.75 });
+        this.fx.shockwave(new THREE.Vector3(x, y + 0.3, z), 0xff8a3a, 4.4, 0.7);
+        this.audio.seerCharge(0);
+      }
+    }
+    for (let i = this._meteors.length - 1; i >= 0; i--) {
+      const m = this._meteors[i];
+      m.t -= dt;
+      if (m.t > 0) continue;
+      this._meteors.splice(i, 1);
+      const at = new THREE.Vector3(m.x, m.y + 0.3, m.z);
+      this.fx.deathBurst(at, 0xff7a2e);
+      this.fx.shockwave(at, 0xffb060, 6, 0.45);
+      this.fx.impactLight(new THREE.Vector3(m.x, m.y + 1.2, m.z), 0xff8030, 18, 0.2);
+      this.fx.addTrauma(0.3);
+      this.audio.bossSlam(0);
+      const dp = Math.hypot(this.player.pos.x - m.x, this.player.pos.z - m.z);
+      if (dp < 4.5 && Math.abs(this.player.pos.y - m.y) < 3.5) this.playerTakeDamage(16, at);
+    }
+
+    if (isTempest) {
+      const c = this.controller;
+      const terrH = this.world.terrain.height(c.pos.x, c.pos.z);
+      const onBareGround = c.onGround && !under && c.pos.y <= terrH + 1.0;
+      this._surgeCd -= dt;
+      if (this._surgeCd <= 0) {
+        this._surgeCd = 0.55;
+        if (onBareGround) {
+          this.playerTakeDamage(4, this.controller.pos.clone());
+          this.audio.impact(0);
+          for (let k = 0; k < 8; k++) {
+            const a = Math.random() * Math.PI * 2, r = Math.random() * 1.2;
+            this.fx.sparks.emit(c.pos.x + Math.cos(a) * r, c.pos.y + 0.15, c.pos.z + Math.sin(a) * r,
+              0, rand(1, 3), 0, 0.62, 0.83, 1.0, 0.22, 0.2, 2, 4);
+          }
+        }
+      }
+      // constant faint crackle warning whenever your boots are on charged ground
+      if (onBareGround && Math.random() < 0.35) {
+        this.fx.sparks.emit(c.pos.x + rand(-1, 1), c.pos.y + 0.1, c.pos.z + rand(-1, 1),
+          0, rand(0.5, 2), 0, 0.5, 0.75, 1.0, 0.15, 0.14, 2, 4);
+      }
     }
   }
 

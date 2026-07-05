@@ -67,6 +67,22 @@ const TYPES = {
     gait: 'stomp', headY: 0.9, stomp: true, deathTrauma: 0.7, boss: true, voice: 0.4, name: 'THE COLOSSUS',
     build: buildColossus,
   },
+  // --- BOSS: a burrowing horror that owns the UNDERGROUND. Meteors scour the
+  // surface during its wave, forcing you down into the cavern with it. ---
+  wurm: {
+    hp: 2000, speed: 6.5, radius: 1.3, height: 3.2, damage: 38, attackCd: 2.0, score: 5000,
+    skin: 0x2b2436, accent: 0xff7a2e, blood: 0x9a5aff, rate: 2, reach: 2.4,
+    gait: 'stomp', headY: 0.8, boss: true, deathTrauma: 0.8, voice: 0.3, name: 'THE WURM',
+    build: buildWurm,
+  },
+  // --- BOSS: a storm-wraith that owns the SKY. The open ground surges with its
+  // charge — live on the ring and the islands, fight it in the air. ---
+  tempest: {
+    hp: 2100, speed: 8, radius: 1.1, height: 2.6, damage: 26, attackCd: 2.6, score: 5000,
+    skin: 0x39415a, accent: 0x9fd4ff, blood: 0xbfe4ff, rate: 6, reach: 1.6,
+    gait: 'fly', flyer: true, cruise: 15, diveRange: -1, climb: 2, headY: 0.7,
+    boss: true, deathTrauma: 0.6, voice: 0.5, name: 'THE TEMPEST', build: buildTempest,
+  },
   // --- FINAL BOSS: a mountainous yeti in a whiteout that hurls giant snowballs
   // you can DASH-REFLECT back into it ---
   yeti: {
@@ -528,6 +544,100 @@ function buildSeer(def) {
   return { root, parts, hitMeshes, skinMats: [], materials, softFade: [robe], muzzleY: 0.65 * s, muzzleZ: 0.3 * s, headHitY: 0.3 * s };
 }
 
+// THE WURM — a segmented chitin serpent. The BEHAVIOUR positions the head and
+// each segment in world space every frame (the group stays at the origin), so
+// the builder just makes the pieces. Buried segments sit below the cave floor,
+// where the rock physically blocks your shots — eruptions are the damage window.
+function buildWurm(def) {
+  const chitin = skinMat(def.skin, 0.6);
+  const plateM = skinMat(shade(def.skin, 0.3), 0.55);
+  const magma = glowMat(def.accent, 2.6);
+  const materials = [chitin, plateM, magma];
+  const root = new THREE.Group();
+  const hitMeshes = [];
+
+  // head: an armored wedge with mandibles + furnace eyes
+  const headG = new THREE.Group();
+  const skull = new THREE.Mesh(new THREE.IcosahedronGeometry(1.15, 1), chitin);
+  skull.scale.set(1, 0.9, 1.35); skull.castShadow = true; headG.add(skull);
+  skull.userData.hit = 'head'; hitMeshes.push(skull);
+  for (const sx of [-1, 1]) {
+    const mand = new THREE.Mesh(new THREE.ConeGeometry(0.22, 1.1, 5), plateM);
+    mand.position.set(sx * 0.55, -0.35, 1.15); mand.rotation.x = Math.PI * 0.42; mand.rotation.z = sx * 0.3;
+    headG.add(mand);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.17, 8, 8), magma);
+    eye.position.set(sx * 0.42, 0.28, 0.85); headG.add(eye);
+  }
+  const crest = new THREE.Mesh(new THREE.ConeGeometry(0.3, 1.0, 5), plateM);
+  crest.position.set(0, 0.85, -0.2); crest.rotation.x = -0.5; headG.add(crest);
+  headG.position.y = -40; root.add(headG);
+
+  // body segments: armored rings with a magma seam, tapering to the tail
+  const segs = [];
+  for (let i = 0; i < 7; i++) {
+    const g = new THREE.Group();
+    const r = 1.0 - i * 0.09;
+    const seg = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), i % 2 ? plateM : chitin);
+    seg.scale.set(1, 0.92, 0.85); seg.castShadow = true; g.add(seg);
+    seg.userData.hit = 'body'; hitMeshes.push(seg);
+    const band = new THREE.Mesh(new THREE.TorusGeometry(r * 0.85, 0.09, 6, 12), magma);
+    band.rotation.y = Math.PI / 2; g.add(band);
+    g.position.y = -40;
+    root.add(g); segs.push(g);
+  }
+
+  const parts = { head: headG, segs, pelvis: headG, hipH: 0, s: 1 };
+  return { root, parts, hitMeshes, skinMats: [chitin, plateM], materials };
+}
+
+// THE TEMPEST — a vast storm-wraith: swept lightning-edged wings, a crackling
+// core, a crown of shards. Flies its own orbit (custom behaviour).
+function buildTempest(def) {
+  const body = skinMat(def.skin, 0.55);
+  const dark = skinMat(shade(def.skin, 0.35), 0.6);
+  const bolt = glowMat(def.accent, 3.0);
+  const materials = [body, dark, bolt];
+  const root = new THREE.Group();
+  const hitMeshes = [];
+
+  const pelvis = new THREE.Group(); root.add(pelvis);
+  const torso = new THREE.Mesh(new THREE.IcosahedronGeometry(0.95, 1), body);
+  torso.scale.set(1, 0.82, 1.45); torso.castShadow = true; pelvis.add(torso);
+  torso.userData.hit = 'body'; hitMeshes.push(torso);
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.34, 10, 9), bolt);
+  core.position.set(0, -0.1, 0.45); pelvis.add(core);
+  core.userData.hit = 'body'; hitMeshes.push(core);
+
+  const headG = new THREE.Group(); headG.position.set(0, 0.4, 1.15); pelvis.add(headG);
+  const skull = new THREE.Mesh(new THREE.IcosahedronGeometry(0.42, 0), dark);
+  skull.castShadow = true; headG.add(skull);
+  skull.userData.hit = 'head'; hitMeshes.push(skull);
+  for (const sx of [-1, 1]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.1, 6, 6), bolt);
+    eye.position.set(sx * 0.18, 0.08, 0.3); headG.add(eye);
+  }
+  for (let i = 0; i < 5; i++) {   // crown of storm shards
+    const sh = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.6 + (i % 3) * 0.2, 4), bolt);
+    sh.position.set((i - 2) * 0.22, 0.55, -0.1); sh.rotation.x = -0.4; headG.add(sh);
+  }
+  const mkWing = (sx) => {
+    const w = new THREE.Group(); w.position.set(sx * 0.5, 0.25, 0);
+    const main = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.1, 1.15), body);
+    main.position.set(sx * 1.4, 0, -0.1); main.rotation.y = sx * 0.4; main.castShadow = true; w.add(main);
+    const tip = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.08, 0.6), dark);
+    tip.position.set(sx * 2.8, 0, -0.55); tip.rotation.y = sx * 0.8; w.add(tip);
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(2.7, 0.12, 0.12), bolt);
+    edge.position.set(sx * 1.4, 0.05, 0.42); edge.rotation.y = sx * 0.4; w.add(edge);
+    pelvis.add(w); return w;
+  };
+  const parts = { pelvis, torso, head: headG, hipH: 0, s: 1 };
+  parts.wingL = mkWing(-1); parts.wingR = mkWing(1);
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.3, 1.6, 5), body);
+  tail.scale.set(1, 1, 0.4); tail.rotation.x = Math.PI / 2; tail.position.z = -1.5; pelvis.add(tail);
+
+  return { root, parts, hitMeshes, skinMats: [body, dark], materials, headHitY: 0.75 };
+}
+
 function buildColossus(def) {
   const s = def.height / 5.0;
   const armor = new THREE.MeshStandardMaterial({ color: def.skin, roughness: 0.6, metalness: 0.3, flatShading: true });
@@ -866,6 +976,8 @@ export class Enemy {
     if (this._pinned) return;   // main owns the corpse transform while it's skewered on a dash
     if (this.deathT >= 0) { this._updateDeath(dt); return; }
     if (this.frozenT > 0) { this._frozenTick(dt); return; }
+    if (this.type === 'wurm') { this._wurmBehavior(dt, player); this.flash = damp(this.flash, 0, 9, dt); this._applyFlash(); return; }
+    if (this.type === 'tempest') { this._tempestBehavior(dt, player); this.flash = damp(this.flash, 0, 9, dt); this._applyFlash(); return; }
 
     if (this.spawnT < 1) { this.spawnT = clamp01(this.spawnT + dt * 2.4); this.group.scale.setScalar(this.spawnT); }
 
@@ -979,6 +1091,174 @@ export class Enemy {
 
     this.flash = damp(this.flash, 0, 9, dt);
     this._applyFlash();
+  }
+
+  // THE WURM: a three-beat loop that owns the cavern. BURIED it drifts under
+  // the player (rumble + dust); it TELEGRAPHS an eruption point; then it ERUPTS
+  // in an arc — head + segments threading out of the floor and back in. The
+  // rock physically blocks bullets while it's buried, so eruptions are the
+  // damage window. It only hunts players who are actually underground —
+  // meteors (main.js) make the surface no place to wait it out.
+  _wurmBehavior(dt, player) {
+    const W = this.mgr.world;
+    if (!this._wstate) {
+      this._wstate = 'buried'; this._wt = 1.2;
+      this._burrow = new THREE.Vector3(this.pos.x, 0, this.pos.z);
+      this._eruptA = new THREE.Vector3(); this._eruptB = new THREE.Vector3();
+      this.spawnT = 1; this.group.scale.setScalar(1);
+      this.group.position.set(0, 0, 0); this.group.rotation.set(0, 0, 0);
+    }
+    const p = this.parts;
+    const floorAt = (x, z) => this.mgr.groundFor(x, z, -12);
+    const pdx = player.pos.x - this._burrow.x, pdz = player.pos.z - this._burrow.z;
+    const pd = Math.hypot(pdx, pdz);
+
+    if (this._wstate === 'buried') {
+      this._wt -= dt;
+      if (pd > 0.5) { this._burrow.x += (pdx / pd) * this.speed * dt; this._burrow.z += (pdz / pd) * this.speed * dt; }
+      // stay inside the cave region
+      if (W && W.isUnder && !W.isUnder(this._burrow.x, this._burrow.z, -12)) this._burrow.multiplyScalar(0.98);
+      this.pos.set(this._burrow.x, floorAt(this._burrow.x, this._burrow.z) - 2.5, this._burrow.z);
+      // hide the body while buried
+      p.head.position.y = -40; for (const g of p.segs) g.position.y = -40;
+      if (this.mgr.playerUnder && pd < 14) {
+        this.mgr.fx.addTrauma(0.9 * dt);
+        if (Math.random() < 0.25) this.mgr.fx.smoke.emit(this._burrow.x, floorAt(this._burrow.x, this._burrow.z) + 0.3, this._burrow.z, 0, 0.8, 0, 0.3, 0.27, 0.24, 0.4, 0.5, -0.4, 2);
+      }
+      if (this._wt <= 0 && this.mgr.playerUnder && pd < 34) {
+        this._wstate = 'telegraph'; this._wt = 0.85;
+        this._eruptA.set(player.pos.x, 0, player.pos.z);
+        const fy = floorAt(this._eruptA.x, this._eruptA.z);
+        this.mgr.fx.shockwave(new THREE.Vector3(this._eruptA.x, fy + 0.3, this._eruptA.z), 0xff7a2e, 4.5, 0.8);
+        this.mgr.audio.growl(this.mgr.panFor(player.pos), 0.3);
+      }
+      return;
+    }
+
+    if (this._wstate === 'telegraph') {
+      this._wt -= dt;
+      this.mgr.fx.addTrauma(1.4 * dt);
+      const fy = floorAt(this._eruptA.x, this._eruptA.z);
+      if (Math.random() < 0.6) this.mgr.fx.debris.emit(
+        this._eruptA.x + rand(-1.2, 1.2), fy + 0.3, this._eruptA.z + rand(-1.2, 1.2),
+        rand(-1, 1), rand(2, 5), rand(-1, 1), 0.28, 0.24, 0.22, 0.4, 0.14, 14, 3);
+      if (this._wt <= 0) {
+        this._wstate = 'erupt'; this._wt = 0; this._eruptHit = false;
+        // arc toward where the player is NOW, clamped inside the cave
+        let dx = player.pos.x - this._eruptA.x, dz = player.pos.z - this._eruptA.z;
+        const L = Math.hypot(dx, dz) || 1; dx /= L; dz /= L;
+        this._eruptB.set(this._eruptA.x + dx * 9, 0, this._eruptA.z + dz * 9);
+        if (W && W.isUnder && !W.isUnder(this._eruptB.x, this._eruptB.z, -12)) this._eruptB.set(this._eruptA.x * 0.55, 0, this._eruptA.z * 0.55);
+        const fy2 = floorAt(this._eruptA.x, this._eruptA.z);
+        this.mgr.fx.deathBurst(new THREE.Vector3(this._eruptA.x, fy2 + 0.5, this._eruptA.z), 0x6b533a);
+        this.mgr.fx.addTrauma(0.55);
+        this.mgr.audio.yetiRoar(this.mgr.panFor(player.pos));
+      }
+      return;
+    }
+
+    // erupting: head + trailing segments follow the arc out of the floor
+    this._wt += dt / 1.5;
+    const A = this._eruptA, B = this._eruptB;
+    const fyA = floorAt(A.x, A.z);
+    const ceilY = W && W.ceilAt ? W.ceilAt(A.x, A.z) : fyA + 8;
+    const arcH = Math.min(5, ceilY - fyA - 1.4);
+    const place = (g, t) => {
+      if (t <= 0 || t >= 1) { g.position.y = -40; return null; }
+      const x = A.x + (B.x - A.x) * t, z = A.z + (B.z - A.z) * t;
+      const y = floorAt(x, z) + Math.sin(t * Math.PI) * arcH + 0.4;
+      g.position.set(x, y, z);
+      return g.position;
+    };
+    const hp = place(p.head, this._wt);
+    if (hp) {
+      const t2 = Math.min(1, this._wt + 0.06);
+      const nx = A.x + (B.x - A.x) * t2, nz = A.z + (B.z - A.z) * t2;
+      p.head.lookAt(nx, floorAt(nx, nz) + Math.sin(t2 * Math.PI) * arcH + 0.4, nz);
+      this.pos.copy(hp);
+      // the strike: touching the emerging serpent hurts (once per eruption)
+      const hd = Math.hypot(player.pos.x - hp.x, player.pos.z - hp.z);
+      if (!this._eruptHit && this._wt > 0.04 && this._wt < 0.85 && hd < 2.5 && Math.abs(player.pos.y - hp.y) < 3) {
+        this._eruptHit = true;
+        player.takeDamage(this.def.damage, this.pos);
+        this.mgr.audio.enemyAttack(this.mgr.panFor(this.pos), this.def.voice);
+      }
+      if (Math.random() < 0.35) this.mgr.fx.debris.emit(hp.x, hp.y - 1, hp.z, rand(-2, 2), rand(1, 4), rand(-2, 2), 0.3, 0.26, 0.22, 0.35, 0.15, 14, 3);
+    }
+    for (let i = 0; i < p.segs.length; i++) place(p.segs[i], this._wt - (i + 1) * 0.085);
+    if (this._wt >= 1 + (p.segs.length + 1) * 0.085) {
+      this._wstate = 'buried'; this._wt = rand(1.1, 2.0);
+      this._burrow.set(B.x, 0, B.z);
+    }
+  }
+
+  // THE TEMPEST: orbits the sky at ring height, volleys bolts, and periodically
+  // dives straight through your position. The ground-surge that makes terra
+  // firma lethal during this fight lives in main (_updateBossHazards).
+  _tempestBehavior(dt, player) {
+    const p = this.parts;
+    if (!this._tstate) {
+      this._tstate = 'orbit';
+      this._orbA = Math.atan2(this.pos.z, this.pos.x);
+      this._volley = 2.4; this._diveCd = 8; this._diveT = 0;
+      this._diveFrom = new THREE.Vector3(); this._diveTo = new THREE.Vector3();
+      this.spawnT = 1; this.group.scale.setScalar(1);
+    }
+    this.phase += dt * 5;
+    if (p.wingL) { const f = Math.sin(this.phase * 1.7); p.wingL.rotation.z = f * 0.55; p.wingR.rotation.z = -f * 0.55; }
+    this.facing = Math.atan2(player.pos.x - this.pos.x, player.pos.z - this.pos.z);
+    this.group.rotation.y = this.facing;
+
+    if (this._tstate === 'orbit') {
+      this._orbA += dt * 0.34;
+      const R = 27;
+      const tx = Math.cos(this._orbA) * R, tz = Math.sin(this._orbA) * R;
+      const ty = 16.5 + Math.sin(this.phase * 0.25) * 2;
+      this.pos.x = damp(this.pos.x, tx, 1.6, dt);
+      this.pos.z = damp(this.pos.z, tz, 1.6, dt);
+      this.pos.y = damp(this.pos.y, ty, 2.0, dt);
+      // bolt volleys (never through rock)
+      this._volley -= dt;
+      if (this._volley <= 0 && !this.mgr.playerUnder && this.mgr.projectiles) {
+        this._volley = 2.6;
+        const origin = new THREE.Vector3(this.pos.x, this.pos.y + 0.2, this.pos.z);
+        const aim = new THREE.Vector3(player.pos.x - origin.x, player.pos.y + 1.1 - origin.y, player.pos.z - origin.z).normalize();
+        const perp = new THREE.Vector3(-aim.z, 0, aim.x);
+        for (let k = -1; k <= 1; k++) {
+          const d2 = aim.clone().addScaledVector(perp, k * 0.1).normalize();
+          this.mgr.projectiles.spawn('bolt', origin.clone().addScaledVector(d2, 2), d2, { owner: 'enemy', damage: 15 });
+        }
+        this.mgr.audio.enemyShoot(this.mgr.panFor(this.pos));
+      }
+      this._diveCd -= dt;
+      if (this._diveCd <= 0 && !this.mgr.playerUnder) {
+        this._tstate = 'dive'; this._diveT = 0; this._diveHit = false;
+        this._diveFrom.copy(this.pos);
+        this._diveTo.set(player.pos.x, player.pos.y + 1.0, player.pos.z);
+        this.mgr.audio.seerCharge(this.mgr.panFor(this.pos));
+      }
+    } else {
+      // dive: swoop through the target point, then climb back to the orbit
+      this._diveT += dt / 1.1;
+      const t = this._diveT;
+      if (t < 0.5) {
+        const k = (t * 2) * (t * 2) * (3 - 2 * t * 2) * 0.5 + t;   // eased in
+        this.pos.lerpVectors(this._diveFrom, this._diveTo, Math.min(1, t * 2));
+      } else {
+        const up = new THREE.Vector3(Math.cos(this._orbA) * 27, 17, Math.sin(this._orbA) * 27);
+        this.pos.lerpVectors(this._diveTo, up, (t - 0.5) * 2);
+      }
+      const hd = Math.hypot(player.pos.x - this.pos.x, player.pos.z - this.pos.z);
+      if (!this._diveHit && hd < 2.3 && Math.abs(player.pos.y + 1 - this.pos.y) < 2.4) {
+        this._diveHit = true;
+        player.takeDamage(this.def.damage, this.pos);
+        this.mgr.fx.addTrauma(0.3);
+        this.mgr.audio.enemyAttack(this.mgr.panFor(this.pos), this.def.voice);
+      }
+      if (Math.random() < 0.5) this.mgr.fx.sparks.emit(this.pos.x, this.pos.y, this.pos.z, 0, 0, 0, 0.62, 0.83, 1.0, 0.14, 0.3, 0, 3);
+      if (this._diveT >= 1) { this._tstate = 'orbit'; this._diveCd = rand(7, 10); }
+    }
+    this.group.position.copy(this.pos);
   }
 
   // Where should movement head? The player, unless we're on different layers of
@@ -1272,6 +1552,13 @@ export class Enemy {
   }
 
   _updateDeath(dt) {
+    if (this.type === 'wurm') {
+      // the serpent's pieces are strewn in world space — just burn it out fast
+      this.deathT += dt;
+      this._setOpacity(1 - clamp01(this.deathT / 0.8));
+      if (this.deathT >= 0.8) this._dispose();
+      return;
+    }
     this.deathT += dt;
     const t = this.deathT;
     const def = this.def;
@@ -1375,6 +1662,7 @@ export class EnemyManager {
   }
 
   bossWaveFor(n) { return n > 0 && n % 5 === 0; }
+  bossTypeFor(n) { return ['colossus', 'yeti', 'wurm', 'tempest'][(Math.max(1, n / 5 | 0) - 1) % 4]; }
 
   start() { this.active = true; this.betweenWaves = 2.0; }
 
@@ -1388,16 +1676,20 @@ export class EnemyManager {
     if (this.isBossWave) {
       // a boss plus a fitting escort. The boss hp climbs each boss encounter.
       const bossNum = n / 5;
-      // the deep-winter waves bring THE YETI in its blizzard; earlier ones the colossus
-      const bossType = n >= 10 ? 'yeti' : 'colossus';
+      // the boss roster rotates: colossus -> yeti (blizzard) -> wurm (underground)
+      // -> tempest (sky), then repeats with scaled health
+      const roster = ['colossus', 'yeti', 'wurm', 'tempest'];
+      const bossType = roster[(bossNum - 1) % roster.length];
       const bossHp = 1 + (bossNum - 1) * 0.6;
       this.spawnQueue.push({ t: bossType, hpScale: bossHp, speedScale: 1, boss: true });
       const escort = 3 + bossNum;
       for (let i = 0; i < escort; i++) {
-        // the yeti is escorted by ravens (they can reach you in the sky)
-        const t = bossType === 'yeti'
-          ? (Math.random() < 0.5 ? 'raven' : 'stalker')
-          : (Math.random() < 0.5 ? 'stalker' : 'husk');
+        // each boss brings a fitting escort
+        const escort = {
+          colossus: ['stalker', 'husk'], yeti: ['raven', 'stalker'],
+          wurm: ['husk', 'stalker'], tempest: ['raven', 'seer'],
+        }[bossType];
+        const t = pick(escort);
         this.spawnQueue.push({ t, hpScale, speedScale });
       }
       // fewer at once during the boss so the boss reads clearly
@@ -1457,7 +1749,8 @@ export class EnemyManager {
     let y = this.terrain.height(x, z);
     // if the player is holed up underground, most walkers spawn down in the
     // tunnels at a sinkhole instead of uselessly pacing the surface
-    if (this.playerUnder && !TYPES[item.t].flyer && !item.boss && this.world.entrances && Math.random() < 0.65) {
+    if (item.boss && item.t === 'wurm') { x = rand(-3, 3); z = rand(-3, 3); y = -16; }
+    else if (this.playerUnder && !TYPES[item.t].flyer && !item.boss && this.world.entrances && Math.random() < 0.65) {
       const e = pick(this.world.entrances);
       x = e.x + rand(-2.5, 2.5); z = e.z + rand(-2.5, 2.5);
       y = -13;

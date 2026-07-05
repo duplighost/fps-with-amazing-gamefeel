@@ -36,7 +36,9 @@ mouse).
 | **Shift / F · Mouse4/5** | **dash** — a fast i-frame lunge on regenerating charges; in the air it lifts you, so you can chain jumps + dashes to soar. **Dash into an incoming snowball to bat it back.** |
 | **Q / middle-mouse** | **slow-mo** — bend time from a regenerating meter (deadly in the air) |
 | **G** | **throw a grenade** — a powerful arcing frag (small stock, rare drops, never self-harms) |
-| **the sky-islands** | jump + air-dash up to the floating islands; brush a ledge and you **mantle** straight up onto it, no stall |
+| **the sky RING** | a connected loop of islands in the sky — double-jump (it's HUGE now) + air-dash up, mantle any ledge, then run the whole loop |
+| **the underground** | drop down any of the four **sinkhole craters** into the tunnels + the great cavern; jump/dash back out the same way |
+| **the pond** | wade straight through it (splashy footsteps); in deep winter it **freezes over** — slippery ice, and whatever was wading gets encased |
 | **Ctrl / C** | crouch · **run + crouch** = slide |
 | **1 / 2 / wheel** | switch weapons (carbine · fast combat shotgun) |
 | **after each wave** | **pick 1 of 3 upgrades** (click a card or press 1/2/3) — they stack all run |
@@ -65,12 +67,17 @@ a photo. The whole scene is generated at load, then run through a filmic camera:
 - **Instanced foliage** — hundreds of low-poly trees, rocks and bushes scattered
   with a density that thins toward the middle and thickens into a treeline, drawn
   in a handful of instanced draw calls.
-- **Floating sky-islands** — chunks of the meadow torn loose and hovering, grass on
-  top and a craggy, crystal-lit underside. They read as native to the world (and
-  tint through the seasons with the ground), give the air game somewhere to go, and
-  double as **one-way platforms** you can mantle onto. The lowest is a **nook** with a
-  glowing central **loot-cage**: kills you make in the column below funnel up and stack
-  inside it, so a shooting perch also feeds you — climb up and grab the pile.
+- **THREE LAYERS.** The world is a sandwich now. **The sky**: an irregular closed
+  RING of connected, undulating islands you can run laps on, plus low stepping
+  islands and the **nook** (its loot-cage still funnels + stacks kills made below).
+  **The surface**: real rolling hills and a pond you wade through — which freezes
+  into slippery ice in deep winter (with a freeze set-piece that encases anything
+  caught wading). **The underground**: four sinkhole craters funnel down into
+  tunnels that meet in a huge crystal-lit cavern under the middle of the map;
+  descending drowns the daylight and closes the fog in dark. One layer-aware
+  ground function drives the player, enemies, pickups and projectiles, so
+  walkers chase you down the sinkholes and back up, flyers circle the holes,
+  and nothing shoots through rock.
 - **A filmic pipeline** — everything renders into an HDR multisampled buffer, gets
   a restrained bloom on genuinely bright highlights (the sun, tracers), then ACES
   tone-mapping and sRGB output. Hazy fog, drifting dust motes, and long shadows sell
@@ -177,7 +184,8 @@ straggler.
 
 ![the colossus](docs/boss.png)
 
-Every fifth wave the horde parts for a **boss**:
+Every fifth wave the horde parts for a **boss** — the roster rotates
+**Colossus → Yeti → Wurm → Tempest**, each owning a different layer:
 
 - **THE COLOSSUS** — a five-metre molten titan with an exposed glowing core, horns
   and shoulder spikes, wrapped in lava cracks. It stomps the ground (each footfall
@@ -189,6 +197,16 @@ Every fifth wave the horde parts for a **boss**:
   closes in, and summons **ravens** to hound you from the sky. The trick: **dash into
   an incoming snowball to bat it back** — a reflected snowball rockets home and
   **staggers it for massive damage**. Guns alone are slow; the reflect is how you win.
+
+- **THE WURM** — the underground's boss. Meteors scour the surface for the whole
+  wave, forcing you DOWN into the cavern with it: a segmented magma-seamed
+  serpent that burrows (bullets can't reach it through rock), telegraphs with a
+  rumble + dust ring, then **erupts in an arc under your feet** — its exposed
+  body is the damage window; the eruption is the thing you dodge.
+- **THE TEMPEST** — the sky's boss. The open ground **surges with storm-charge**
+  (standing on it drains you fast — dash i-frames carry you across), so you live
+  on the ring and the islands while it orbits at your altitude, volleys bolts,
+  and periodically dives straight through your position.
 
 Dodge the slam with your dash i-frames, chip a boss down (their high health shrugs
 off a finisher), and when one falls it goes out in a chain of explosions, a slow-mo
