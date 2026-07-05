@@ -40,6 +40,14 @@ const GRENADE_START = 2;
 
 // dash strike + finisher tuning
 const DASH_DAMAGE = 130;
+// dash contact: a KILL skewers the corpse in front + detonates it; a SURVIVOR you
+// dash into body-checks you to a rebound stop (never a phase-through).
+const PIN_TIME = 0.11;             // how long a killed corpse rides in front before it pops
+const PIN_DIST = 1.5;              // how far ahead the corpse is skewered
+const PIN_Y = 1.25;                // corpse height above the player's feet
+const DASH_CONTACT_MARGIN = 0.3;   // extra reach for the (tight) stop radius
+const DASH_CONTACT_DOT = 0.2;      // survivor must be roughly AHEAD to stop you (~78° cone)
+const DASH_CONTACT_GRACE = 0.045;  // always commit a visible lunge before a stop can trigger
 const FINISHER_FRAC = 0.42;      // enemy at/below this fraction of max hp is finishable
 const FINISHER_MIN = 55;         // ...or below this absolute hp
 const FINISHER_BONUS = 150;
@@ -90,6 +98,8 @@ class Game {
     this.enemies.projectiles = this.projectiles;
     this._dashHitSet = new Set();     // enemies struck by the current dash
     this._dashKills = 0; this._dashFinishers = 0;
+    this._dashPin = null;             // { e, t } — a killed corpse skewered in front
+    this._dashAge = 0;                // time since the current dash began (lunge grace)
     this.slowmoMeter = 1; this._slowmoWasActive = false;
     this.season = 0;   // 0 = summer … 1 = deep winter, eased toward the wave target
     this._stormBoost = 0;  // a live yeti whips the field into a full blizzard
@@ -286,7 +296,7 @@ class Game {
     this.dropMods = { ammo: 1, health: 1, grenade: 1 };
     this.hud.setGrenades(this.grenades, this.maxGrenades);
     this.season = 0; this._stormBoost = 0; this.world.setSeason(0, 0, 0);   // back to summer
-    this._dashHitSet.clear();
+    this._dashHitSet.clear(); this._dashPin = null; this._dashAge = 0;
     this.fx.trauma = 0; this.fx.hitstop = 0; this.fx.slowmo = 1;
     this.maxHealth = MAX_HEALTH; this.slowmoCap = 1; this.upgradeStacks = {};
     this.health = this.maxHealth; this.invuln = 0; this.lastDamage = this.time;
@@ -384,7 +394,8 @@ class Game {
         this._regen(gdt);
         if (this.comboTimer > 0) { this.comboTimer -= gdt; if (this.comboTimer <= 0) this.combo = 0; }
       }
-      this._dashSweep();
+      this._dashSweep(realDt);
+      this._updateDashPin(realDt);
       // ease the season toward this wave's target so the world changes a little
       // more each level, drifting from summer into a haunted, snowbound winter
       const wv = Math.max(0, this.enemies.wave - 1);
@@ -447,8 +458,9 @@ class Game {
       this.fx.dashDust(new THREE.Vector3(f.x, f.y, f.z), new THREE.Vector3(0, -1, 0));
     }
     if (ev.dashed) {
+      if (this._dashPin) this._detonatePin();   // a fresh dash pops any stale skewer
       this._dashHitSet.clear();
-      this._dashKills = 0; this._dashFinishers = 0;
+      this._dashKills = 0; this._dashFinishers = 0; this._dashAge = 0;
       this.audio.dash();
       this.cam.addFovPunch(11);
       this.fx.addTrauma(0.14);
@@ -541,20 +553,41 @@ class Game {
     });
   }
 
-  // While dashing, strike every enemy the player sweeps through (once each);
-  // low-health enemies are executed with a finisher.
-  _dashSweep() {
+  // While dashing: STRIKE PASS damages everything in a wide bubble (carve the
+  // crowd, once each, pin kills). STOP PASS ends the dash on the nearest survivor
+  // you physically reach ahead of you (a body-check rebound, never a phase-through).
+  _dashSweep(realDt) {
     if (!this.controller.isDashing()) return;
     const cp = this.controller.pos;
-    for (const e of this.enemies.enemies) {
+    const dd = this.controller.dashDir;
+    // (a) strike pass — the generous slash radius. Iterate a snapshot: pinning a
+    // kill can detonate+dispose the previous corpse, mutating the live array.
+    for (const e of this.enemies.enemies.slice()) {
       if (!e.alive || this._dashHitSet.has(e)) continue;
       const dx = e.pos.x - cp.x, dz = e.pos.z - cp.z;
       const rr = this.controller.dashHitRadius + e.def.radius;
       if (dx * dx + dz * dz <= rr * rr) {
         this._dashHitSet.add(e);
-        this._dashStrike(e);
+        const killed = this._dashStrike(e);
+        if (killed) this._pinCorpse(e);
       }
     }
+    // (b) stop pass — after a committed lunge, halt on the nearest SURVIVOR we
+    // already struck that is genuinely ahead and within true body-contact range
+    this._dashAge += realDt;
+    if (this._dashAge < DASH_CONTACT_GRACE) return;
+    let best = null, bestD2 = Infinity;
+    for (const e of this._dashHitSet) {
+      if (!e.alive) continue;
+      const dx = e.pos.x - cp.x, dz = e.pos.z - cp.z;
+      const stop = this.player.radius + e.def.radius + DASH_CONTACT_MARGIN;
+      const d2 = dx * dx + dz * dz;
+      if (d2 > stop * stop) continue;
+      const d = Math.sqrt(d2) || 1;
+      if ((dx / d) * dd.x + (dz / d) * dd.z < DASH_CONTACT_DOT) continue;   // must be ahead
+      if (d2 < bestD2) { bestD2 = d2; best = e; }
+    }
+    if (best) this._dashBodyCheck(best);
   }
 
   _dashStrike(e) {
@@ -565,7 +598,9 @@ class Game {
     const finisher = e.health <= Math.max(FINISHER_MIN, maxHp * FINISHER_FRAC);
     const pan = this.enemies.panFor(e.pos);
     e.knockback.addScaledVector(dir, finisher ? 4.5 : 3);
+    e._killedByDash = true;   // suppress the corpse's own death-burst (folded into the pin pop)
     const killed = e.takeDamage(finisher ? e.health + 1 : DASH_DAMAGE, point, dir, false);
+    e._killedByDash = false;
 
     // always a big, visible strike (no floating number — the ring/blood carry it)
     this.fx.shockwave(point, finisher ? 0xffe08a : 0xff8a3a, finisher ? 4.2 : 3);
@@ -593,6 +628,74 @@ class Game {
     if (this._dashKills === 3) {
       this.hud.popText(this.controller.eyePosition.addScaledVector(dir, 3), 'SLICE ×3+', this.camera, 'finisher');
     }
+    return killed;
+  }
+
+  // Skewer a freshly-killed corpse to a point in front of the player. Only one
+  // rides at a time — a new kill detonates the previous, so a line of fodder
+  // reads as a clean skewer-pop-skewer stream instead of a pile.
+  _pinCorpse(e) {
+    if (this._dashPin && this._dashPin.e !== e) this._detonatePin();
+    e._pinned = true; e.flash = 1; e._applyFlash();
+    this._dashPin = { e, t: 0 };
+  }
+
+  // Glue the pinned corpse in front each frame (on realDt, so it tracks the
+  // still-moving player straight through kill hitstop), then pop it.
+  _updateDashPin(realDt) {
+    const pin = this._dashPin;
+    if (!pin) return;
+    const e = pin.e;
+    if (!e || !e.group || !e.group.parent) { this._dashPin = null; if (e) e._pinned = false; return; }
+    pin.t += realDt;
+    if (!this.controller.isDashing() || pin.t >= PIN_TIME) { this._detonatePin(); return; }
+    const p = this.controller.pos, dd = this.controller.dashDir;
+    const ax = p.x + dd.x * PIN_DIST, az = p.z + dd.z * PIN_DIST;
+    const centerY = p.y + PIN_Y;
+    const originY = e.def.flyer ? centerY : centerY - e.def.height * 0.5;
+    e.pos.set(ax, originY, az);
+    e.group.position.set(ax, originY, az);
+    e.group.rotation.set(0, Math.atan2(dd.x, dd.z), pin.t * 24);   // fast tumble-smear
+  }
+
+  // The "explode in your face": burst the pinned corpse in view, then dispose it
+  // (the explosion IS the death, so there's no corpse to snap to the ground).
+  _detonatePin() {
+    const pin = this._dashPin; this._dashPin = null;
+    if (!pin) return;
+    const e = pin.e;
+    const dd = this.controller.dashDir, cp = this.controller.pos;
+    const p = new THREE.Vector3(cp.x + dd.x * PIN_DIST, cp.y + PIN_Y, cp.z + dd.z * PIN_DIST);
+    this.fx.deathBurst(p, e.def.blood);
+    this.fx.shockwave(p, 0xffb060, 4.2, 0.4);
+    this.fx.bloodBurst(p, dd, 1.8, e.def.blood);
+    this.fx.impactLight(p, 0xffcaa0, 7, 0.08);
+    this.fx.addTrauma(0.16); this.fx.addHitstop(0.04);
+    this.audio.dashHit(this.enemies.panFor(e.pos));
+    e._pinned = false;
+    if (e.group && e.group.parent) e._dispose();
+  }
+
+  // A survivor you dash into stops you dead — a mass-scaled rebound + a big slam,
+  // never a phase-through. Heavy bodies bounce you harder; air-dashes keep their arc.
+  _dashBodyCheck(e) {
+    const heavy = e.def.radius >= 0.7 || e.def.gait === 'stomp';
+    const air = this.controller.dashAir && !this.controller.onGround;
+    const rebound = heavy ? (air ? 5.0 : 6.5) : (air ? 3.0 : 4.0);
+    const pop = heavy ? 3.0 : 2.0;
+    this.controller.endDash(rebound, pop);
+    this.invuln = Math.max(this.invuln, 0.2);
+    const dd = this.controller.dashDir;
+    e.knockback.addScaledVector(dd, heavy ? 4 : 7); e.flash = 1;
+    const cp = this.controller.pos;
+    const p = new THREE.Vector3(cp.x + dd.x * (0.4 + e.def.radius), cp.y + 1.05, cp.z + dd.z * (0.4 + e.def.radius));
+    this.fx.shockwave(p, 0x9fd0ff, heavy ? 5.0 : 3.6, 0.42);
+    this.fx.bloodBurst(p, dd, heavy ? 1.2 : 1.6, e.def.blood);
+    this.fx.impactLight(p, 0xbfe0ff, 7, 0.08);
+    this.fx.addTrauma(heavy ? 0.4 : 0.26); this.fx.addHitstop(heavy ? 0.09 : 0.06);
+    this.cam.addFovPunch(-6);                       // compression kick (dash launch is +11)
+    this.audio.dashHit(this.enemies.panFor(e.pos));
+    this.hud.hitMarker(false, false);
   }
 
   // Roll for an ammo/health drop when an enemy dies. Adaptive: bias to health

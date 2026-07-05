@@ -46,6 +46,7 @@ const SLIDE_BOOST = 1.26, SLIDE_FRICTION = 2.4, SLIDE_MIN = 7.5, SLIDE_TIME = 0.
 const DASH_SPEED = 24.5, AIR_DASH_SPEED = 28.0, DASH_TIME = 0.18, AIR_DASH_TIME = 0.24;
 const DASH_COOLDOWN = 0.14, DASH_REGEN = 0.74, DASH_LIFT = 11.5, DASH_HOP = 3.0, DASH_BUFFER = 0.16;
 const DASH_IFRAME = 0.06;          // invulnerability that outlasts the dash a touch
+const DASH_CONTACT_IFRAME = 0.2;   // extra i-frames when a dash body-checks a survivor to a stop
 const DASH_HIT_RADIUS = 1.7;       // how close an enemy must be to be dash-struck (+ its radius)
 const ADS_WALK = 4.6;              // capped move speed while sighted
 
@@ -94,6 +95,18 @@ export class Controller {
   isDashing() { return this._dashTimer > 0; }
   // invulnerable through the dash and a short recovery window
   get dashInvuln() { return this._dashIFrame > 0; }
+
+  // End the dash early — a body-check into a survivor. Zeroing the timer is the
+  // ONLY way to actually stop (the dash branch overwrites vel.x/z each frame while
+  // it runs). Applies a backward rebound + optional grounded vy pop, and keeps you
+  // invulnerable through the bounce recovery.
+  endDash(rebound = 0, popY = 0) {
+    if (this._dashTimer <= 0) return;
+    this._dashTimer = 0;
+    if (rebound > 0) { this.vel.x = -this.dashDir.x * rebound; this.vel.z = -this.dashDir.z * rebound; }
+    if (popY > 0 && this.onGround) this.vel.y = Math.max(this.vel.y, popY);
+    this._dashIFrame = Math.max(this._dashIFrame, DASH_CONTACT_IFRAME);
+  }
 
   get eyePosition() {
     return new THREE.Vector3(this.pos.x, this.pos.y + this.eyeHeight, this.pos.z);

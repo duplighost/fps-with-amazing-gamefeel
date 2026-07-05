@@ -822,12 +822,15 @@ export class Enemy {
     // pos.y; grounded models are feet-origin and need the head/chest offset
     const centerOff = this.def.flyer ? 0 : this.def.height * (isHead ? 0.85 : 0.5);
     const center = this.group.position.clone().setY(this.pos.y + centerOff);
-    this.mgr.fx.deathBurst(center, this.def.blood);
-    if (this.def.burst) {
-      // rupture: a second, larger gas-and-gore burst
+    // a dash-kill's gore is concentrated into the in-face pin detonation instead
+    if (!this._killedByDash) {
       this.mgr.fx.deathBurst(center, this.def.blood);
-      this.mgr.fx.bloodBurst(center, new THREE.Vector3(0, 1, 0), 2.2, this.def.accent);
-      this.mgr.fx.addTrauma(0.2);
+      if (this.def.burst) {
+        // rupture: a second, larger gas-and-gore burst
+        this.mgr.fx.deathBurst(center, this.def.blood);
+        this.mgr.fx.bloodBurst(center, new THREE.Vector3(0, 1, 0), 2.2, this.def.accent);
+        this.mgr.fx.addTrauma(0.2);
+      }
     }
     this.mgr.fx.addTrauma(this.def.deathTrauma || 0.12);
     this.mgr.audio.enemyDeath(pan, this.def.voice);
@@ -855,6 +858,7 @@ export class Enemy {
   }
 
   update(dt, player) {
+    if (this._pinned) return;   // main owns the corpse transform while it's skewered on a dash
     if (this.deathT >= 0) { this._updateDeath(dt); return; }
 
     if (this.spawnT < 1) { this.spawnT = clamp01(this.spawnT + dt * 2.4); this.group.scale.setScalar(this.spawnT); }
