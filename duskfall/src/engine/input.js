@@ -42,7 +42,10 @@ export class Input {
     this._onKeyDown = (e) => {
       const action = KEY_MAP[e.code];
       if (!action) return;
-      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+      // While playing (pointer locked), swallow the browser default for any game
+      // key so combos like Ctrl+W (crouch + forward) don't close the tab and Space
+      // doesn't scroll. Also cover the always-problematic keys off-lock.
+      if (this.locked || ['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
       if (!this.held.has(action)) this.pressed.add(action);
       this.held.add(action);
     };

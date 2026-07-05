@@ -47,17 +47,19 @@ export function buildPlatforms(scene, terrain) {
     const g = new THREE.Group();
     g.position.set(x, 0, z);
 
-    // rock body: a faceted chunk tapering downward
-    const bodyH = 2.6;
+    // rock body: a faceted chunk tapering downward. Its TOP sits ~0.4 BELOW the
+    // grass-cap top (tucked up inside the cap, which is a touch wider) so the two
+    // top faces are never coplanar — that coplanarity was the z-fighting flicker.
+    const bodyH = 2.6, bodyTop = y - 0.4;
     const bodyGeo = new THREE.CylinderGeometry(r * 0.98, r * 0.46, bodyH, 9, 1);
-    bodyGeo.translate(0, y - bodyH / 2, 0);
+    bodyGeo.translate(0, bodyTop - bodyH / 2, 0);
     _roughen(bodyGeo, 0.28);
     const body = new THREE.Mesh(bodyGeo, earthMat);
     body.castShadow = true; body.receiveShadow = true; g.add(body); solids.push(body);
 
-    // grass cap: the flat landing surface, top face exactly at y
-    const capH = 0.55;
-    const capGeo = new THREE.CylinderGeometry(r * 1.03, r * 0.98, capH, 10, 1);
+    // grass cap: the flat landing surface, top face exactly at y (the collision top)
+    const capH = 0.7;
+    const capGeo = new THREE.CylinderGeometry(r * 1.04, r * 0.99, capH, 10, 1);
     capGeo.translate(0, y - capH / 2, 0);
     const cap = new THREE.Mesh(capGeo, grassMat);
     cap.castShadow = true; cap.receiveShadow = true; g.add(cap); solids.push(cap);

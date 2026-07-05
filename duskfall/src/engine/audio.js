@@ -18,6 +18,18 @@ export class Audio {
     this.enabled = true;
     this._volume = 0.85;
     this._muted = false;
+    this._lastPlay = {};   // per-key timestamps for rate-limiting repetitive sfx
+  }
+
+  // Rate-limit a repeating sound so bursts (e.g. carving a crowd during slow-mo)
+  // don't machine-gun the same voice into an abrasive stutter. Returns false to skip.
+  _throttle(key, gap) {
+    if (!this.ready) return false;
+    const t = this.ctx.currentTime;
+    const last = this._lastPlay[key];
+    if (last !== undefined && t - last < gap) return false;
+    this._lastPlay[key] = t;
+    return true;
   }
 
   // Must be called from a user gesture (click / pointer lock) to satisfy
@@ -141,12 +153,16 @@ export class Audio {
 
   shotgun() {
     if (!this.ready) return;
-    // a fat, tight boom that won't mud at the faster fire rate, with a sub kick
-    this._noiseBurst({ dur: 0.024, vol: 0.62, type: 'highpass', freq: 3400, sweepTo: 900 });
-    this._noiseBurst({ dur: 0.2, vol: 0.64, type: 'lowpass', freq: 950, sweepTo: 95 });
-    this._noiseBurst({ dur: 0.1, vol: 0.4, type: 'bandpass', freq: 1550, q: 0.6, sweepTo: 460 });
-    this._tone({ freq: 84, freq2: 34, dur: 0.18, vol: 0.46, type: 'sine' });
-    this._tone({ freq: 50, freq2: 27, dur: 0.12, vol: 0.24, type: 'sine' });   // sub kick
+    // A big, powerful blast (not a pop): a hard crack transient, a loud weighty
+    // body sweeping down into a deep chest-thump + sub, a gritty mid crunch for
+    // bite, and a short air-tail so it reads as a cannon, not a cap gun.
+    this._noiseBurst({ dur: 0.03, vol: 0.9, type: 'highpass', freq: 3900, sweepTo: 650 });   // crack
+    this._noiseBurst({ dur: 0.28, vol: 0.82, type: 'lowpass', freq: 1300, sweepTo: 68, q: 0.9 }); // blast body
+    this._noiseBurst({ dur: 0.15, vol: 0.5, type: 'bandpass', freq: 1750, q: 0.7, sweepTo: 340 }); // grit
+    this._tone({ freq: 98, freq2: 30, dur: 0.26, vol: 0.62, type: 'sine' });     // chest boom
+    this._tone({ freq: 150, freq2: 58, dur: 0.09, vol: 0.34, type: 'triangle' });// knock
+    this._tone({ freq: 52, freq2: 25, dur: 0.2, vol: 0.42, type: 'sine' });      // deep sub
+    this._noiseBurst({ dur: 0.24, vol: 0.3, type: 'lowpass', freq: 480, sweepTo: 80, delay: 0.035 }); // tail
   }
 
   pistol() {
@@ -177,12 +193,14 @@ export class Audio {
   // sound like one creature. Softer waveforms + wide randomisation keep repeated
   // hits from getting grating.
   enemyHit(pan = 0, voice = 1) {
+    if (!this._throttle('ehit', 0.045)) return;   // don't stutter on rapid multi-hits
     const dest = this._panned(pan);
     this._noiseBurst({ dur: rand(0.04, 0.07), vol: 0.2, type: 'lowpass', freq: rand(560, 820), sweepTo: 190, dest });
     this._tone({ freq: rand(140, 210) * voice, freq2: 72 * voice, dur: rand(0.06, 0.11), vol: 0.14, type: 'triangle', dest });
   }
 
   enemyDeath(pan = 0, voice = 1) {
+    if (!this._throttle('edeath', 0.06)) return;  // a dash through a crowd shouldn't machine-gun deaths
     const dest = this._panned(pan);
     this._tone({ freq: rand(150, 210) * voice, freq2: 46 * voice, dur: rand(0.4, 0.6), vol: 0.24, type: 'sawtooth', dest });
     this._tone({ freq: rand(84, 120) * voice, freq2: 38 * voice, dur: 0.5, vol: 0.14, type: 'triangle', dest });
@@ -190,12 +208,14 @@ export class Audio {
   }
 
   enemyAttack(pan = 0, voice = 1) {
+    if (!this._throttle('eatk', 0.06)) return;
     const dest = this._panned(pan);
     this._tone({ freq: rand(160, 200) * voice, freq2: rand(300, 360) * voice, dur: rand(0.1, 0.16), vol: 0.2, type: 'triangle', dest });
     this._noiseBurst({ dur: 0.11, vol: 0.14, type: 'bandpass', freq: 850, q: 0.8, sweepTo: 1500, dest });
   }
 
   growl(pan = 0, voice = 1) {
+    if (!this._throttle('growl', 0.14)) return;
     const dest = this._panned(pan);
     this._tone({ freq: rand(64, 108) * voice, freq2: rand(52, 84) * voice, dur: rand(0.4, 0.62), vol: 0.1, type: 'sawtooth', dest });
     this._noiseBurst({ dur: 0.34, vol: 0.045, type: 'lowpass', freq: 360, dest });
@@ -301,6 +321,7 @@ export class Audio {
     this._tone({ freq: 220, freq2: 520, dur: 0.13, vol: 0.2, type: 'sawtooth' });
   }
   dashHit(pan = 0) {
+    if (!this._throttle('dashhit', 0.04)) return;
     // a heavy shoulder-charge crunch
     const dest = this._panned(pan);
     this._noiseBurst({ dur: 0.09, vol: 0.4, type: 'lowpass', freq: 900, sweepTo: 150, q: 1, dest });

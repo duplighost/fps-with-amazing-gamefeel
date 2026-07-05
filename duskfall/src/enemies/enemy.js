@@ -47,9 +47,9 @@ const TYPES = {
   },
   // --- FLYER: a diving carrion bird that climbs to the sky-islands and swoops ---
   raven: {
-    hp: 44, speed: 7.4, radius: 0.46, height: 1.3, damage: 11, attackCd: 1.0, score: 175,
+    hp: 44, speed: 5.2, radius: 0.46, height: 1.3, damage: 11, attackCd: 1.0, score: 175,
     skin: 0x2b2440, accent: 0xff3da8, blood: 0x4a2f5a, rate: 9, reach: 0.9,
-    gait: 'fly', headY: 0.6, flyer: true, cruise: 7.5, diveRange: 13, climb: 3.0,
+    gait: 'fly', headY: 0.6, flyer: true, cruise: 7.5, diveRange: 13, climb: 0.9,
     voice: 1.55, build: buildRaven,
   },
   // --- FLYING SNIPER: holds altitude near an island and fires telegraphed bolts ---
