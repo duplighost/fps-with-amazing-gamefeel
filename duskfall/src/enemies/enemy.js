@@ -759,6 +759,7 @@ export class Enemy {
     this._addCd = rand(6, 9);     // boss add-spawn cooldown
     this._enrageDmg = 1;
     this._stagger = 0;            // yeti reel after a reflected snowball
+    this._swoopClimb = 0;        // raven pull-up timer after a diving strike
 
     const built = this.def.build(this.def);
     this.group = built.root;
@@ -903,15 +904,18 @@ export class Enemy {
     if (def.gait !== 'float' && !def.flyer) this.mgr.collideEnemy(this, def.radius);
     else this.mgr.clampBounds(this);
     if (def.flyer) {
-      // altitude control: cruise above the ground, dive to the player to strike
-      // (a snipers holds a high standoff and never dives: diveRange < 0)
+      // altitude control: cruise above the ground, dive to the player to strike,
+      // then pull up and swoop back for another pass. (A sniper holds a high
+      // standoff and never dives: diveRange < 0.)
       const groundY = this.mgr.terrain.height(this.pos.x, this.pos.z);
       const cruise = groundY + def.cruise;
+      if (this._swoopClimb > 0) this._swoopClimb -= dt;
       let ty;
-      if (def.diveRange > 0 && dist < def.diveRange) ty = player.pos.y + def.height * 0.25;
+      if (def.diveRange > 0 && dist < def.diveRange && this._swoopClimb <= 0) ty = player.pos.y + def.height * 0.25;
       else ty = Math.max(cruise, player.pos.y * 0.55 + groundY * 0.2 + def.cruise * 0.45);
+      if (this._swoopClimb > 0) ty = Math.max(ty, player.pos.y + def.cruise * 0.8);   // climb clear of the player after a strike
       ty = Math.max(ty, groundY + 1.0);
-      this.flyY = damp(this.flyY, ty, def.climb, dt);
+      this.flyY = damp(this.flyY, ty, def.climb * (this._swoopClimb > 0 ? 1.6 : 1), dt);
       this.pos.y = this.flyY;
     } else {
       this.pos.y = this.mgr.terrain.height(this.pos.x, this.pos.z) + (def.hover || 0);
@@ -936,6 +940,7 @@ export class Enemy {
         player.takeDamage((def.damage + this.mgr.wave * 0.5) * this._enrageDmg, this.pos);
         this.mgr.audio.enemyAttack(this.mgr.panFor(this.pos), this.def.voice);
         if (this.parts.armL) { this.parts.armL.rotation.x = -2.4; this.parts.armR.rotation.x = -2.4; }
+        if (def.flyer) this._swoopClimb = rand(1.1, 1.7);   // a raven peels off and climbs for another pass
       }
     }
 
