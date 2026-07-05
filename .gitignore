@@ -6,4 +6,5 @@ node_modules/
 # local dev scratch: Playwright test scripts, capture screenshots, deploy zips
 d*.mjs
 dusk_*.png
+dw_*.png
 *-netlify.zip
