@@ -35,9 +35,11 @@ mouse).
 | **Space** | jump — press again in the air for a **high double jump** |
 | **Shift / F · Mouse4/5** | **dash** — a fast i-frame lunge on regenerating charges; in the air it lifts you, so you can chain jumps + dashes to soar. **Dash into an incoming snowball to bat it back.** |
 | **Q / middle-mouse** | **slow-mo** — bend time from a regenerating meter (deadly in the air) |
+| **G** | **throw a grenade** — a powerful arcing frag (small stock, rare drops, never self-harms) |
 | **the sky-islands** | jump + air-dash up to the floating islands; brush a ledge and you **mantle** straight up onto it, no stall |
 | **Ctrl / C** | crouch · **run + crouch** = slide |
 | **1 / 2 / wheel** | switch weapons (carbine · fast combat shotgun) |
+| **after each wave** | **pick 1 of 3 upgrades** (click a card or press 1/2/3) — they stack all run |
 | **Esc** | pause |
 
 **There is no reload.** DOOM-style: your ammo only comes from what enemies drop and
@@ -66,7 +68,9 @@ a photo. The whole scene is generated at load, then run through a filmic camera:
 - **Floating sky-islands** — chunks of the meadow torn loose and hovering, grass on
   top and a craggy, crystal-lit underside. They read as native to the world (and
   tint through the seasons with the ground), give the air game somewhere to go, and
-  double as **one-way platforms** you can mantle onto.
+  double as **one-way platforms** you can mantle onto. The lowest is a **nook** with a
+  glowing central **loot-cage**: kills you make in the column below funnel up and stack
+  inside it, so a shooting perch also feeds you — climb up and grab the pile.
 - **A filmic pipeline** — everything renders into an HDR multisampled buffer, gets
   a restrained bloom on genuinely bright highlights (the sun, tracers), then ACES
   tone-mapping and sRGB output. Hazy fog, drifting dust motes, and long shadows sell
@@ -109,11 +113,19 @@ Game feel is the sum of a hundred small responses. The big ones here:
   brief **i-frames**, a big FOV punch, camera roll, radial speed-lines, a whoosh and
   a dust kick. On the ground it hops you forward; in the air it lifts and carries you.
   It's a dodge, a traversal tool, *and* a weapon.
-- **Dash strike & finishers** — dashing **through** enemies smashes them: a shockwave
-  ring, blood, heavy knockback and a per-body hit-stop, and you can carve through a
-  whole crowd in one lunge (i-frames keep you safe). Catch one that's **low on health**
-  and it's a **FINISHER** — a gold flash, slow-mo, bonus points, and (crucially) a
-  refill of **ammo + health**. Aggression is how you sustain.
+- **Dash strike — skewer or crunch** — a dash carves a **wide bubble**, so you still
+  cleave a whole crowd in one lunge (i-frames keep you safe). But it no longer just
+  phases: a **kill** yanks the corpse to a point right in front of your face, drags it
+  with the lunge, then **detonates it in view** — you *see* what you killed. A survivor
+  you dash into **body-checks** you to a mass-scaled rebound stop (never a phase-through;
+  air-dashes keep their arc). Catch one **low on health** and it's a **FINISHER** — gold
+  flash, slow-mo, bonus points, and a refill of **ammo + health**.
+- **Grenades** — a small stock of powerful frags (press **G**) that arc, bounce, and
+  detonate on a fuse in a huge AoE fireball — one-shotting a cluster and chunking
+  bosses — but they **never hurt you**. Refilled by rare drops; a HUD counter tracks them.
+- **Roguelite upgrades** — clear a wave and the field freezes for a **choice of three
+  stacking upgrades**. Odd waves boost capacity (max health / slow-mo duration / max
+  ammo); even waves boost your **drop rates** (ammo / health / grenades). A run compounds.
 - **No reload — feed on the horde** — there's no magazine and only a trickle of passive
   regen. Every weapon draws from one pool that refills from enemy **ammo/health drops**
   (adaptive: more health when you're hurt) and from dash finishers. Glowing pickups
