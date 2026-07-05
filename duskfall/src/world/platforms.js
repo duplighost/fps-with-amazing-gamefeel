@@ -1,29 +1,23 @@
-// Floating sky-islands. Chunks of the meadow torn loose and hovering, matching
-// the low-poly faceted look of the ground and foliage. Each island gives a solid
-// circular TOP you can land on — wired into the controller as a one-way platform
-// (you pass up through it, land on it coming down) — over a craggy torn-earth
-// underside lit by a glowing crystal, so the levitation reads as haunted, not
-// arbitrary. They tint through the seasons like the terrain (green → autumn →
-// snow-capped) so the verticality always looks native to the environment.
+// The SKY LAYER. An irregular closed RING of elongated floating islands —
+// chains of overlapping grass-topped earth chunks — undulating between heights,
+// so there's a whole second level you can live on: run the loop, fight along
+// it, drop off anywhere. Plus low stepping islands as on-ramps and the NOOK
+// (loot-cage perch). Every disc is a one-way platform top (land from above,
+// mantle onto its ledge) and everything tints with the seasons.
 
 import * as THREE from 'three';
 import { rand, clamp01, lerp } from '../engine/math.js';
 
-// Hand-placed for good traversal: a rough ring of stepping-stones at climbable
-// heights (the air game clears ~20m easily), none over the spawn point.
-//   a = angle, d = distance from centre, y = TOP surface height, r = radius
+// low on-ramps (heights RELATIVE to local ground): the nook + two steppers
 const SPECS = [
-  { a: 0.35, d: 15, y: 7.5,  r: 4.6 },
-  { a: 1.15, d: 26, y: 12.5, r: 4.2 },
-  { a: 2.05, d: 19, y: 16.5, r: 3.6 },
-  { a: 3.05, d: 31, y: 9.5,  r: 5.2 },
-  { a: 3.95, d: 22, y: 18.5, r: 3.9 },
-  { a: 4.75, d: 34, y: 13.5, r: 4.7 },
-  { a: 5.55, d: 17, y: 20.5, r: 3.4 },
-  // the NOOK: the lowest + smallest island (easy first hop, exposed shooting
-  // perch) with a central loot-cage that funneled pickups rise into
   { a: 5.0, d: 13, y: 6.5, r: 3.0, nook: true },
+  { a: 0.6, d: 16, y: 8.0, r: 3.6 },
+  { a: 2.6, d: 18, y: 10.5, r: 3.2 },
 ];
+
+// the ring: node count, radius band and ABSOLUTE height band (a coherent layer)
+const RING_NODES = 7;
+const RING_SPACING = 4.6;      // disc spacing along each edge (heavy overlap)
 
 // season colour triples [summer, autumn, winter]
 const GRASS = [0x5f7a34, 0x9c7a2c, 0xcfd8de];
@@ -42,78 +36,61 @@ export function buildPlatforms(scene, terrain) {
 
   const solids = [];
   const colliders = [];   // {x,z,y,r} circular one-way tops for the controller
-  let nookDesc = null;    // the loot-cage descriptor (set when the nook is built)
+  let nookDesc = null;
 
-  for (const spec of SPECS) {
-    const x = Math.cos(spec.a) * spec.d;
-    const z = Math.sin(spec.a) * spec.d;
-    // heights are RELATIVE to the local ground now (the terrain has real hills)
-    const r = spec.r, y = spec.y + Math.max(terrain.height(x, z), 0);
+  // one island disc: grass cap over a craggy tapering body. `decor` adds the
+  // spikes/crystals/boulders (nodes + standalones only — chain discs stay lean).
+  function addDisc(x, z, y, r, decor, nook) {
     const g = new THREE.Group();
     g.position.set(x, 0, z);
 
-    // rock body: a faceted chunk tapering downward. Its TOP sits ~0.4 BELOW the
-    // grass-cap top (tucked up inside the cap, which is a touch wider) so the two
-    // top faces are never coplanar — that coplanarity was the z-fighting flicker.
-    const bodyH = 2.6, bodyTop = y - 0.4;
-    const bodyGeo = new THREE.CylinderGeometry(r * 0.98, r * 0.46, bodyH, 9, 1);
+    const bodyH = decor ? 2.6 : 2.0, bodyTop = y - 0.4;
+    const bodyGeo = new THREE.CylinderGeometry(r * 0.98, r * 0.42, bodyH, 8, 1);
     bodyGeo.translate(0, bodyTop - bodyH / 2, 0);
     _roughen(bodyGeo, 0.28);
     const body = new THREE.Mesh(bodyGeo, earthMat);
     body.castShadow = true; body.receiveShadow = true; g.add(body); solids.push(body);
 
-    // grass cap: the flat landing surface, top face exactly at y (the collision top)
     const capH = 0.7;
-    const capGeo = new THREE.CylinderGeometry(r * 1.04, r * 0.99, capH, 10, 1);
+    const capGeo = new THREE.CylinderGeometry(r * 1.04, r * 0.99, capH, 9, 1);
     capGeo.translate(0, y - capH / 2, 0);
     const cap = new THREE.Mesh(capGeo, grassMat);
     cap.castShadow = true; cap.receiveShadow = true; g.add(cap); solids.push(cap);
 
-    // torn-earth underside: a few downward rock spikes of varying length
-    const nSpikes = 2 + (spec.d % 2);
-    for (let i = 0; i < nSpikes; i++) {
-      const sr = r * rand(0.28, 0.5), sh = rand(2.2, 4.6);
-      const spike = new THREE.Mesh(new THREE.ConeGeometry(sr, sh, 6), earthMat);
-      spike.rotation.x = Math.PI;                       // apex points down
-      spike.position.set(rand(-r * 0.4, r * 0.4), y - bodyH - sh / 2 + 0.4, rand(-r * 0.4, r * 0.4));
-      spike.castShadow = true; g.add(spike);
-    }
-
-    // a glowing crystal cluster hung underneath (bloom accent + the "why it floats")
-    const cluster = new THREE.Group();
-    cluster.position.set(0, y - bodyH - 1.0, 0);
-    for (let i = 0; i < 3; i++) {
-      const cr = new THREE.Mesh(new THREE.OctahedronGeometry(rand(0.35, 0.62), 0), crystalMat);
-      cr.position.set(rand(-r * 0.3, r * 0.3), rand(-0.5, 0.4), rand(-r * 0.3, r * 0.3));
+    if (decor) {
+      for (let i = 0; i < 2; i++) {
+        const sr = r * rand(0.28, 0.48), sh = rand(2.2, 4.4);
+        const spike = new THREE.Mesh(new THREE.ConeGeometry(sr, sh, 6), earthMat);
+        spike.rotation.x = Math.PI;
+        spike.position.set(rand(-r * 0.4, r * 0.4), y - bodyH - sh / 2 + 0.4, rand(-r * 0.4, r * 0.4));
+        spike.castShadow = true; g.add(spike);
+      }
+      const cr = new THREE.Mesh(new THREE.OctahedronGeometry(rand(0.4, 0.62), 0), crystalMat);
+      cr.position.set(rand(-r * 0.3, r * 0.3), y - bodyH - 1.0, rand(-r * 0.3, r * 0.3));
       cr.rotation.set(rand(0, 3), rand(0, 3), rand(0, 3));
-      cluster.add(cr);
-    }
-    g.add(cluster);
-
-    // scatter a couple of boulders + grass tufts on top so it reads as real ground
-    for (let i = 0; i < 3; i++) {
-      const ba = rand(0, Math.PI * 2), bd = rand(0, r * 0.72);
-      const boul = new THREE.Mesh(new THREE.IcosahedronGeometry(rand(0.3, 0.6), 0), earthMat);
-      boul.position.set(Math.cos(ba) * bd, y + 0.15, Math.sin(ba) * bd);
-      boul.rotation.set(rand(0, 3), rand(0, 3), rand(0, 3));
-      boul.castShadow = true; g.add(boul);
+      g.add(cr);
+      for (let i = 0; i < 2; i++) {
+        const ba = rand(0, Math.PI * 2), bd = rand(0, r * 0.7);
+        const boul = new THREE.Mesh(new THREE.IcosahedronGeometry(rand(0.3, 0.55), 0), earthMat);
+        boul.position.set(Math.cos(ba) * bd, y + 0.15, Math.sin(ba) * bd);
+        boul.rotation.set(rand(0, 3), rand(0, 3), rand(0, 3));
+        boul.castShadow = true; g.add(boul);
+      }
     }
 
-    // the nook's central loot-cage: purely decorative (never in solids/colliders,
-    // so you can shoot down through it), made of the glowing crystal so it blooms
-    // and season-tints for free. Funneled pickups rise up inside and stack.
-    if (spec.nook) {
+    if (nook) {
+      // the loot-cage: decorative glowing bars pickups funnel up into
       const cageR = 0.9, cageH = 2.0;
       for (let i = 0; i < 6; i++) {
         const a = (i / 6) * Math.PI * 2;
         const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, cageH, 5), crystalMat);
-        bar.position.set(Math.cos(a) * cageR, y + 1.0 + 0.05, Math.sin(a) * cageR);
+        bar.position.set(Math.cos(a) * cageR, y + 1.05, Math.sin(a) * cageR);
         g.add(bar);
       }
-      const baseRing = new THREE.Mesh(new THREE.TorusGeometry(cageR, 0.05, 6, 16), crystalMat);
-      baseRing.rotation.x = Math.PI / 2; baseRing.position.y = y + 0.08; g.add(baseRing);
-      const topRing = new THREE.Mesh(new THREE.TorusGeometry(cageR, 0.05, 6, 16), crystalMat);
-      topRing.rotation.x = Math.PI / 2; topRing.position.y = y + 2.05; g.add(topRing);
+      const ring1 = new THREE.Mesh(new THREE.TorusGeometry(cageR, 0.05, 6, 16), crystalMat);
+      ring1.rotation.x = Math.PI / 2; ring1.position.y = y + 0.08; g.add(ring1);
+      const ring2 = new THREE.Mesh(new THREE.TorusGeometry(cageR, 0.05, 6, 16), crystalMat);
+      ring2.rotation.x = Math.PI / 2; ring2.position.y = y + 2.05; g.add(ring2);
       nookDesc = { x, z, y, cageFloorY: y + 0.4, cageConfine: 0.75, catchR: 6.0, cap: 5 };
     }
 
@@ -121,15 +98,45 @@ export function buildPlatforms(scene, terrain) {
     colliders.push({ x, z, y, r: r * 0.98 });
   }
 
+  // --- low on-ramps (relative to the local ground) ---
+  for (const spec of SPECS) {
+    const x = Math.cos(spec.a) * spec.d;
+    const z = Math.sin(spec.a) * spec.d;
+    addDisc(x, z, spec.y + Math.max(terrain.height(x, z), 0), spec.r, true, spec.nook);
+  }
+
+  // --- the RING: an irregular closed loop of stretched islands in the sky ---
+  // Nodes at jittered angle/radius/height; each edge is a chain of overlapping
+  // discs whose height eases between the nodes, so the whole loop undulates —
+  // a closed shape, but nothing like a perfect circle.
+  const nodes = [];
+  for (let i = 0; i < RING_NODES; i++) {
+    const a = (i / RING_NODES) * Math.PI * 2 + Math.sin(i * 12.9898) * 0.3;
+    const d = 26 + ((i * 53) % 17) * 0.55;                    // radius 26..35
+    const y = 15.5 + Math.sin(i * 2.3) * 3.4;                 // height 12.1..18.9 (absolute)
+    nodes.push({ x: Math.cos(a) * d, z: Math.sin(a) * d, y });
+  }
+  for (let i = 0; i < RING_NODES; i++) {
+    const A = nodes[i], B = nodes[(i + 1) % RING_NODES];
+    const len = Math.hypot(B.x - A.x, B.z - A.z);
+    const steps = Math.max(2, Math.ceil(len / RING_SPACING));
+    for (let s = 0; s < steps; s++) {                          // B is the next edge's s=0
+      const t = s / steps, tt = t * t * (3 - 2 * t);
+      const x = lerp(A.x, B.x, t), z = lerp(A.z, B.z, t);
+      const y = lerp(A.y, B.y, tt);
+      const r = (s === 0 ? 3.8 : 2.9) + Math.sin((i * 7 + s) * 3.1) * 0.35;
+      addDisc(x, z, y, r, s === 0, false);
+    }
+  }
+
   return {
     solids,
-    platforms: colliders,             // consumed by the controller for landing
-    nook: nookDesc,                   // the loot-cage funnel descriptor (or null)
+    platforms: colliders,
+    nook: nookDesc,
     mats: { grass: grassMat, earth: earthMat, crystal: crystalMat },
     setSeason(season) {
       seasonCol(grassMat.color, GRASS, season);
       seasonCol(earthMat.color, EARTH, season);
-      // crystals cool from ice-blue toward a colder violet as the haunt deepens
       crystalMat.emissive.setHex(season > 0.5 ? 0x8fa0ff : 0x59d4ff);
     },
   };

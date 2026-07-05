@@ -32,7 +32,10 @@ const JUMP_BUFFER = 0.16;
 const JUMP_CUT_GRACE = 0.11;      // short taps still get a real jump before the cut
 const DOUBLE_JUMP_CUT_GRACE = 0.16;
 const STICK = 0.42;               // snap-to-ground (small, so it never eats a jump)
-const PLATFORM_GRACE = 0.5;       // feet must be within this of a sky-island top for it to count as ground
+const PLATFORM_GRACE = 1.7;       // island tops within this ABOVE the feet still count as ground —
+                                  // big enough to stair-step along the sky-ring's undulating disc
+                                  // chains (and it doubles as generous ledge-catch when landing);
+                                  // jumping up through from far below is unaffected (one-way)
 // Ledge-mantle: brushing the SIDE of a sky-island near its top vaults you up onto
 // it — a fast, momentum-preserving climb so verticality never breaks your flow.
 const MANTLE_REACH = 2.9;         // how far below the top your feet can be and still grab
