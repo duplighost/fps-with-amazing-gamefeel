@@ -33,8 +33,9 @@ mouse).
 | **WASD** | move — you're **always running** at full speed |
 | **Mouse** | look · **Left click** fire · **Right click** aim (iron sights) |
 | **Space** | jump — press again in the air for a **high double jump** |
-| **Shift / F · Mouse4/5** | **dash** — a fast i-frame lunge on regenerating charges; in the air it lifts you, so you can chain jumps + dashes to soar |
+| **Shift / F · Mouse4/5** | **dash** — a fast i-frame lunge on regenerating charges; in the air it lifts you, so you can chain jumps + dashes to soar. **Dash into an incoming snowball to bat it back.** |
 | **Q / middle-mouse** | **slow-mo** — bend time from a regenerating meter (deadly in the air) |
+| **the sky-islands** | jump + air-dash up to the floating islands; brush a ledge and you **mantle** straight up onto it, no stall |
 | **Ctrl / C** | crouch · **run + crouch** = slide |
 | **1 / 2 / wheel** | switch weapons (carbine · fast combat shotgun) |
 | **Esc** | pause |
@@ -62,6 +63,10 @@ a photo. The whole scene is generated at load, then run through a filmic camera:
 - **Instanced foliage** — hundreds of low-poly trees, rocks and bushes scattered
   with a density that thins toward the middle and thickens into a treeline, drawn
   in a handful of instanced draw calls.
+- **Floating sky-islands** — chunks of the meadow torn loose and hovering, grass on
+  top and a craggy, crystal-lit underside. They read as native to the world (and
+  tint through the seasons with the ground), give the air game somewhere to go, and
+  double as **one-way platforms** you can mantle onto.
 - **A filmic pipeline** — everything renders into an HDR multisampled buffer, gets
   a restrained bloom on genuinely bright highlights (the sun, tracers), then ACES
   tone-mapping and sRGB output. Hazy fog, drifting dust motes, and long shadows sell
@@ -143,6 +148,11 @@ signature-coloured blood, and its own gait and behaviour:
   terrain, unravelling into light when killed.
 - **Bloater** — a bulbous pustular sack glowing orange. Waddles in and **ruptures**
   on death in a second, larger burst.
+- **Raven** — a dark-violet carrion bird with swept, magenta-lit wings. It **flies**,
+  climbing to the sky-islands and diving at you — so getting airborne is no escape.
+- **Seer** — a hovering violet caster that holds a high **standoff and snipes** you
+  with charged bolts from above (its eye glows as it winds up — read it and dodge).
+  Perches by the islands after the first few levels.
 
 The roster unlocks and its mix ramps as the waves climb. A **pressure spawner**
 keeps a steady crowd bearing down on you and refills it as you cut them down, so
@@ -161,11 +171,17 @@ Every fifth wave the horde parts for a **boss**:
   and shoulder spikes, wrapped in lava cracks. It stomps the ground (each footfall
   shakes the screen), winds up a telegraphed **ground-slam** with an area shockwave,
   and periodically **calls in reinforcements**. A dedicated health bar tracks it.
+- **THE YETI** — the deep-winter finale. A **seven-metre frost titan** of shaggy
+  fur and ice shards that arrives in a **whiteout blizzard** (it whips the storm up
+  itself). It hurls **giant snowballs** on a telegraphed wind-up, slams anyone who
+  closes in, and summons **ravens** to hound you from the sky. The trick: **dash into
+  an incoming snowball to bat it back** — a reflected snowball rockets home and
+  **staggers it for massive damage**. Guns alone are slow; the reflect is how you win.
 
-Dodge the slam with your dash i-frames, chip it down (its high health shrugs off a
-finisher), and when it falls it goes out in a chain of explosions, a slow-mo beat,
-a huge score payout, and a pile of guaranteed ammo + health. Its health scales up
-each time you meet one.
+Dodge the slam with your dash i-frames, chip a boss down (their high health shrugs
+off a finisher), and when one falls it goes out in a chain of explosions, a slow-mo
+beat, a huge score payout, and a pile of guaranteed ammo + health. Their health
+scales up each time you meet one.
 
 ## Structure
 

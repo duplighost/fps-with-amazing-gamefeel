@@ -14,6 +14,10 @@ import * as THREE from 'three';
 import { clamp, clamp01, damp, rand, randInt, pick, lerp } from '../engine/math.js';
 
 const WHITE = new THREE.Color(0xffffff);
+const SEER_CHARGE = 0.8;   // seconds a sniper telegraphs (glowing) before a bolt — long enough to dodge
+const YETI_WINDUP = 0.85;  // yeti snowball wind-up (telegraph) — read it and dash to reflect
+const SNOWBALL_SPEED = 15; // must match projectiles.js snowball def (for lob aiming)
+const SNOWBALL_GRAV = 5.5;
 
 const TYPES = {
   husk: {
@@ -41,12 +45,34 @@ const TYPES = {
     skin: 0x7c7a34, accent: 0xff8a1e, blood: 0x9fb830, rate: 4.5, reach: 1.1,
     gait: 'waddle', headY: 0.8, burst: true, voice: 0.75, build: buildBloater,
   },
+  // --- FLYER: a diving carrion bird that climbs to the sky-islands and swoops ---
+  raven: {
+    hp: 44, speed: 7.4, radius: 0.46, height: 1.3, damage: 11, attackCd: 1.0, score: 175,
+    skin: 0x2b2440, accent: 0xff3da8, blood: 0x4a2f5a, rate: 9, reach: 0.9,
+    gait: 'fly', headY: 0.6, flyer: true, cruise: 7.5, diveRange: 13, climb: 3.0,
+    voice: 1.55, build: buildRaven,
+  },
+  // --- FLYING SNIPER: holds altitude near an island and fires telegraphed bolts ---
+  seer: {
+    hp: 70, speed: 3.4, radius: 0.5, height: 1.8, damage: 16, attackCd: 2.6, score: 260,
+    skin: 0x3a2c52, accent: 0xba7bff, blood: 0x53356a, rate: 3, reach: 0.9,
+    gait: 'fly', headY: 0.72, flyer: true, cruise: 12, diveRange: -1, climb: 2.0,
+    standoff: 20, shooter: true, voice: 1.1, build: buildSeer,
+  },
   // --- BOSS: a towering molten titan that slams and calls in reinforcements ---
   colossus: {
     hp: 1600, speed: 2.9, radius: 1.7, height: 5.0, damage: 42, attackCd: 2.4, score: 3000,
     skin: 0x4a3a3e, accent: 0xff4416, blood: 0xff6a22, rate: 2.4, reach: 3.4,
     gait: 'stomp', headY: 0.9, stomp: true, deathTrauma: 0.7, boss: true, voice: 0.4, name: 'THE COLOSSUS',
     build: buildColossus,
+  },
+  // --- FINAL BOSS: a mountainous yeti in a whiteout that hurls giant snowballs
+  // you can DASH-REFLECT back into it ---
+  yeti: {
+    hp: 2400, speed: 2.2, radius: 2.3, height: 7.2, damage: 40, attackCd: 2.7, score: 5000,
+    skin: 0xaebfd2, accent: 0x8fe6ff, blood: 0xc4e2f2, rate: 2.0, reach: 4.0,
+    gait: 'stomp', headY: 0.88, stomp: true, deathTrauma: 0.85, boss: true, thrower: true,
+    voice: 0.32, name: 'THE YETI', build: buildYeti,
   },
 };
 
@@ -408,6 +434,99 @@ function buildBloater(def) {
   return { root, parts, hitMeshes, skinMats: [skin], materials };
 }
 
+// A carrion bird: dark violet, swept angular wings, a glowing beak + talons. Its
+// root sits at the body centre (it flies), and wingL/wingR flap in the animator.
+function buildRaven(def) {
+  const s = def.height / 1.3;
+  const skin = skinMat(def.skin, 0.6);
+  const dark = skinMat(shade(def.skin, 0.4), 0.6);
+  const glow = glowMat(def.accent, 2.6);
+  const materials = [skin, dark, glow];
+  const root = new THREE.Group();
+  const hitMeshes = [];
+
+  // body centre acts as the "pelvis" pivot; flyers spawn/​move at this height
+  const pelvis = new THREE.Group(); pelvis.position.y = 0; root.add(pelvis);
+  const body = new THREE.Mesh(new THREE.IcosahedronGeometry(0.34 * s, 1), skin);
+  body.scale.set(0.7, 0.6, 1.35); body.castShadow = true; pelvis.add(body);
+  body.userData.hit = 'body'; hitMeshes.push(body);
+
+  // head + glowing beak thrust forward
+  const headG = new THREE.Group(); headG.position.set(0, 0.08 * s, 0.42 * s); pelvis.add(headG);
+  const skull = new THREE.Mesh(new THREE.IcosahedronGeometry(0.15 * s, 0), skin);
+  skull.castShadow = true; headG.add(skull);
+  skull.userData.hit = 'head'; hitMeshes.push(skull);
+  const beak = new THREE.Mesh(new THREE.ConeGeometry(0.07 * s, 0.28 * s, 4), glow);
+  beak.rotation.x = Math.PI / 2; beak.position.z = 0.2 * s; headG.add(beak);
+  for (const sx of [-1, 1]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.035 * s, 6, 6), glow);
+    eye.position.set(sx * 0.08 * s, 0.05 * s, 0.07 * s); headG.add(eye);
+  }
+
+  const parts = { pelvis, torso: body, head: headG, hipH: 0, s };
+  // wings: a shoulder group flapped about z; a swept membrane + angular primaries
+  const mkWing = (sx) => {
+    const w = new THREE.Group(); w.position.set(sx * 0.18 * s, 0.1 * s, 0);
+    const main = new THREE.Mesh(new THREE.BoxGeometry(0.9 * s, 0.04 * s, 0.42 * s), skin);
+    main.position.set(sx * 0.5 * s, 0, -0.04 * s); main.rotation.y = sx * 0.35; main.castShadow = true; w.add(main);
+    const tip = new THREE.Mesh(new THREE.BoxGeometry(0.5 * s, 0.035 * s, 0.24 * s), dark);
+    tip.position.set(sx * 0.98 * s, 0, -0.22 * s); tip.rotation.y = sx * 0.72; w.add(tip);
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(0.95 * s, 0.05 * s, 0.05 * s), glow);
+    edge.position.set(sx * 0.5 * s, 0.02 * s, 0.15 * s); edge.rotation.y = sx * 0.35; w.add(edge);
+    pelvis.add(w); return w;
+  };
+  parts.wingL = mkWing(-1); parts.wingR = mkWing(1);
+
+  // talons + a swept tail
+  for (const sx of [-1, 1]) {
+    const t = new THREE.Mesh(new THREE.ConeGeometry(0.05 * s, 0.22 * s, 4), glow);
+    t.rotation.x = Math.PI; t.position.set(sx * 0.1 * s, -0.3 * s, 0.1 * s); pelvis.add(t);
+  }
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.12 * s, 0.55 * s, 4), skin);
+  tail.scale.set(1, 0.35, 1); tail.rotation.x = Math.PI / 2; tail.position.z = -0.5 * s; pelvis.add(tail);
+
+  return { root, parts, hitMeshes, skinMats: [skin], materials };
+}
+
+// A hovering caster/sniper: a robed floating body with a bright charged eye and a
+// halo of shards. Legless like the wisp; it holds altitude and fires bolts.
+function buildSeer(def) {
+  const s = def.height / 1.8;
+  const robe = new THREE.MeshStandardMaterial({ color: def.skin, roughness: 0.85, metalness: 0, flatShading: true, transparent: true, opacity: 0.92 });
+  const glow = glowMat(def.accent, 3.0);
+  const materials = [robe, glow];
+  const root = new THREE.Group();
+  const hitMeshes = [];
+
+  const pelvis = new THREE.Group(); pelvis.position.y = 0; root.add(pelvis);
+  const torso = new THREE.Mesh(new THREE.ConeGeometry(0.34 * s, 1.05 * s, 7), robe);
+  torso.position.y = -0.1 * s; torso.castShadow = true; pelvis.add(torso);
+  torso.userData.hit = 'body'; hitMeshes.push(torso);
+  // hooded head with a single charged eye (also the "muzzle" of its bolt)
+  const headG = new THREE.Group(); headG.position.y = 0.5 * s; pelvis.add(headG);
+  const hood = new THREE.Mesh(new THREE.ConeGeometry(0.26 * s, 0.42 * s, 7), robe);
+  hood.position.y = 0.02 * s; hood.castShadow = true; headG.add(hood);
+  headG.userData.hit = 'head';
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.12 * s, 12, 10), glow);
+  eye.position.set(0, -0.02 * s, 0.16 * s); headG.add(eye);
+  eye.userData.hit = 'head'; hitMeshes.push(eye);
+  // a slow-orbiting halo of shards (charges up before a shot)
+  const halo = new THREE.Group(); halo.position.y = 0.15 * s; pelvis.add(halo);
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2;
+    const sh = new THREE.Mesh(new THREE.OctahedronGeometry(0.09 * s, 0), glow);
+    sh.position.set(Math.cos(a) * 0.5 * s, 0, Math.sin(a) * 0.5 * s); halo.add(sh);
+  }
+  const parts = { pelvis, torso, head: headG, halo, eye, hipH: 0, s, wisps: [] };
+  // drifting sleeve-arms cupped forward (aiming)
+  const armL = bone(robe, 0.07 * s, 0.5 * s); armL.group.position.set(-0.26 * s, 0.1 * s, 0.12 * s); armL.group.rotation.set(-0.6, 0, 0.4);
+  const armR = bone(robe, 0.07 * s, 0.5 * s); armR.group.position.set(0.26 * s, 0.1 * s, 0.12 * s); armR.group.rotation.set(-0.6, 0, -0.4);
+  pelvis.add(armL.group, armR.group); parts.armL = armL.group; parts.armR = armR.group;
+  hitMeshes.push(armL.mesh, armR.mesh);
+
+  return { root, parts, hitMeshes, skinMats: [], materials, softFade: [robe], muzzleY: 0.65 * s, muzzleZ: 0.3 * s };
+}
+
 function buildColossus(def) {
   const s = def.height / 5.0;
   const armor = new THREE.MeshStandardMaterial({ color: def.skin, roughness: 0.6, metalness: 0.3, flatShading: true });
@@ -501,6 +620,111 @@ function buildColossus(def) {
   return { root, parts, hitMeshes, skinMats: [armor, plate], materials };
 }
 
+// scatter shaggy fur tufts (little flat-shaded cones) over a parent for a AAA
+// silhouette without a skinned mesh
+function furTufts(parent, mat, n, cx, cy, cz, spread, len) {
+  for (let i = 0; i < n; i++) {
+    const a = rand(0, Math.PI * 2), r = rand(0, spread);
+    const t = new THREE.Mesh(new THREE.ConeGeometry(len * rand(0.18, 0.3), len * rand(0.7, 1.3), 4), mat);
+    t.position.set(cx + Math.cos(a) * r, cy + rand(-spread * 0.5, spread * 0.5), cz + Math.sin(a) * r);
+    t.rotation.set(rand(-0.6, 0.6), rand(0, Math.PI), rand(-0.6, 0.6));
+    parent.add(t);
+  }
+}
+
+// THE YETI — a mountainous shaggy brute of ice and fur. Broad hunched body under a
+// mane, ice-blue eyes + shards, huge fists it winds back to hurl snowballs.
+function buildYeti(def) {
+  const s = def.height / 7.2;
+  const fur = skinMat(def.skin, 0.92);
+  const fur2 = skinMat(shade(def.skin, 0.24), 0.92);
+  const belly = new THREE.MeshStandardMaterial({ color: 0xeef4fb, roughness: 0.9, metalness: 0, flatShading: true });
+  const ice = glowMat(def.accent, 3.0);
+  const dark = skinMat(0x232a36, 0.7);
+  const materials = [fur, fur2, belly, ice, dark];
+  const root = new THREE.Group();
+  const hitMeshes = [];
+
+  const hipH = 3.0 * s;
+  const pelvis = new THREE.Group(); pelvis.position.y = hipH; root.add(pelvis);
+
+  // huge hunched torso
+  const torso = new THREE.Mesh(new THREE.IcosahedronGeometry(1.5 * s, 1), fur);
+  torso.scale.set(1.15, 1.15, 0.95); torso.position.y = 0.55 * s; torso.castShadow = true; pelvis.add(torso);
+  torso.userData.hit = 'body'; hitMeshes.push(torso);
+  // pale belly
+  const gut = new THREE.Mesh(new THREE.SphereGeometry(1.05 * s, 12, 10), belly);
+  gut.scale.set(1.0, 1.05, 0.8); gut.position.set(0, 0.3 * s, 0.55 * s); pelvis.add(gut);
+  // shaggy mane over shoulders/chest
+  furTufts(pelvis, fur, 26, 0, 1.1 * s, 0, 1.5 * s, 0.7 * s);
+  furTufts(pelvis, fur2, 18, 0, 0.5 * s, -0.4 * s, 1.4 * s, 0.6 * s);
+
+  // massive shoulders with jutting ice shards
+  for (const sx of [-1, 1]) {
+    const pa = new THREE.Mesh(new THREE.SphereGeometry(0.85 * s, 12, 10), fur);
+    pa.position.set(sx * 1.5 * s, 1.35 * s, 0); pa.castShadow = true; pelvis.add(pa);
+    furTufts(pelvis, fur2, 8, sx * 1.5 * s, 1.35 * s, 0, 0.7 * s, 0.55 * s);
+    for (let i = 0; i < 3; i++) {
+      const shard = new THREE.Mesh(new THREE.ConeGeometry(0.14 * s, rand(0.7, 1.2) * s, 5), ice);
+      shard.position.set(sx * (1.3 + i * 0.18) * s, (1.7 + rand(0, 0.4)) * s, rand(-0.4, 0.2) * s);
+      shard.rotation.z = sx * rand(-0.5, -0.1); shard.rotation.x = rand(-0.4, 0.2); pelvis.add(shard);
+    }
+  }
+  // a ridge of ice shards down the back
+  for (let i = 0; i < 4; i++) {
+    const shard = new THREE.Mesh(new THREE.ConeGeometry(0.16 * s, (0.9 - i * 0.12) * s, 5), ice);
+    shard.position.set(0, (1.5 - i * 0.28) * s, (-0.9 - i * 0.03) * s); shard.rotation.x = -0.7; pelvis.add(shard);
+  }
+
+  // brutal head: broad skull, heavy brow, glowing eyes, tusked maw, fur ruff
+  const headG = new THREE.Group(); headG.position.set(0, 2.0 * s, 0.15 * s); pelvis.add(headG);
+  const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.62 * s, 1), fur);
+  head.scale.set(1.05, 0.95, 1.0); head.castShadow = true; headG.add(head);
+  head.userData.hit = 'head'; hitMeshes.push(head);
+  const brow = new THREE.Mesh(new THREE.BoxGeometry(0.9 * s, 0.16 * s, 0.3 * s), fur2);
+  brow.position.set(0, 0.16 * s, 0.44 * s); brow.rotation.x = -0.25; headG.add(brow);
+  const maw = new THREE.Mesh(new THREE.BoxGeometry(0.5 * s, 0.26 * s, 0.32 * s), dark);
+  maw.position.set(0, -0.28 * s, 0.42 * s); headG.add(maw);
+  for (const sx of [-1, 1]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.1 * s, 8, 8), ice);
+    eye.position.set(sx * 0.22 * s, 0.02 * s, 0.5 * s); headG.add(eye);
+    // lower tusks
+    const tusk = new THREE.Mesh(new THREE.ConeGeometry(0.06 * s, 0.28 * s, 5), belly);
+    tusk.position.set(sx * 0.16 * s, -0.2 * s, 0.5 * s); headG.add(tusk);
+  }
+  furTufts(headG, fur, 14, 0, 0.1 * s, -0.2 * s, 0.7 * s, 0.5 * s);   // mane ruff
+
+  const parts = { pelvis, torso, head: headG, hipH, s };
+
+  // gigantic arms; the RIGHT is the throwing arm (behaviour rotates parts.armR)
+  const armL = bone(fur, 0.4 * s, 2.6 * s); armL.group.position.set(-1.7 * s, 1.25 * s, 0);
+  const armR = bone(fur, 0.4 * s, 2.6 * s); armR.group.position.set(1.7 * s, 1.25 * s, 0);
+  for (const a of [armL, armR]) {
+    const fist = new THREE.Mesh(new THREE.IcosahedronGeometry(0.55 * s, 0), fur2); fist.position.y = -2.5 * s; fist.castShadow = true; a.group.add(fist);
+    for (let i = 0; i < 4; i++) {   // claws
+      const cl = new THREE.Mesh(new THREE.ConeGeometry(0.08 * s, 0.34 * s, 4), belly);
+      cl.position.set((i - 1.5) * 0.16 * s, -2.9 * s, 0.28 * s); cl.rotation.x = 1.2; a.group.add(cl);
+    }
+    furTufts(a.group, fur, 8, 0, -1.2 * s, 0, 0.45 * s, 0.5 * s);
+  }
+  pelvis.add(armL.group, armR.group); parts.armL = armL.group; parts.armR = armR.group;
+  hitMeshes.push(armL.mesh, armR.mesh);
+
+  // thick legs + big feet
+  const legL = bone(fur, 0.5 * s, hipH); legL.group.position.set(-0.8 * s, hipH, 0);
+  const legR = bone(fur, 0.5 * s, hipH); legR.group.position.set(0.8 * s, hipH, 0);
+  for (const [l, sx] of [[legL, -1], [legR, 1]]) {
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.7 * s, 0.4 * s, 1.1 * s), fur2);
+    foot.position.set(0, -hipH + 0.2 * s, 0.35 * s); foot.castShadow = true; l.group.add(foot);
+    furTufts(l.group, fur, 6, 0, -0.8 * s, 0, 0.4 * s, 0.5 * s);
+  }
+  root.add(legL.group, legR.group); parts.legL = legL.group; parts.legR = legR.group;
+  hitMeshes.push(legL.mesh, legR.mesh);
+
+  // world-space fist muzzle for the throw (relative to enemy pos): high + forward
+  return { root, parts, hitMeshes, skinMats: [fur, fur2], materials, muzzleY: 5.2 * s, muzzleZ: 1.6 * s };
+}
+
 // ==========================================================================
 
 export class Enemy {
@@ -534,6 +758,7 @@ export class Enemy {
     this._slamT = -1;              // boss slam windup timer (-1 = idle)
     this._addCd = rand(6, 9);     // boss add-spawn cooldown
     this._enrageDmg = 1;
+    this._stagger = 0;            // yeti reel after a reflected snowball
 
     const built = this.def.build(this.def);
     this.group = built.root;
@@ -549,6 +774,15 @@ export class Enemy {
     for (const m of this.hitMeshes) m.userData.enemy = this;
 
     this.pos.y = this.mgr.terrain.height(this.pos.x, this.pos.z) + (this.def.hover || 0);
+    // flyers spawn already aloft at their cruise altitude
+    if (this.def.flyer) this.pos.y = this.mgr.terrain.height(this.pos.x, this.pos.z) + this.def.cruise;
+    this.flyY = this.pos.y;
+    this._deathVy = 0;
+    this.shootTimer = rand(1.4, this.def.attackCd || 2.5);   // seer bolt cadence
+    this._chargeT = -1;                                        // >=0 while telegraphing a shot
+    // seer's world-space muzzle offset (from its build)
+    this._muzzleY = built.muzzleY || this.def.height * 0.6;
+    this._muzzleZ = built.muzzleZ || 0;
     this.group.position.copy(this.pos);
     this.group.scale.setScalar(0.01);
     mgr.scene.add(this.group);
@@ -637,7 +871,11 @@ export class Enemy {
       else if (this.lungeCd <= 0 && dist < 16 && dist > def.reach + 1) { this.lunging = 0.5; this.lungeCd = rand(2.5, 4.5); this.mgr.audio.growl(this.mgr.panFor(this.pos), this.def.voice); }
     }
 
-    if (dist > def.reach + 0.4) desired.addScaledVector(dir, spd);
+    if (def.shooter) {
+      // a sniper holds a firing standoff — advance if far, back off if crowded
+      if (dist > def.standoff + 3) desired.addScaledVector(dir, spd);
+      else if (dist < def.standoff - 4) desired.addScaledVector(dir, -spd * 0.8);
+    } else if (dist > def.reach + 0.4) desired.addScaledVector(dir, spd);
 
     // stalker/wisp weave: a sideways sine so they don't beeline (enraged charges straight)
     if (def.weave && this.lunging <= 0 && !this.enraged) {
@@ -653,10 +891,23 @@ export class Enemy {
     this.pos.addScaledVector(this.vel, dt);
     this.pos.addScaledVector(this.knockback, dt);
     this.knockback.multiplyScalar(Math.exp(-7 * dt));
-    // wisps float over foliage; everything else pushes out of it
-    if (def.gait !== 'float') this.mgr.collideEnemy(this, def.radius);
+    // wisps + flyers float over foliage; everything else pushes out of it
+    if (def.gait !== 'float' && !def.flyer) this.mgr.collideEnemy(this, def.radius);
     else this.mgr.clampBounds(this);
-    this.pos.y = this.mgr.terrain.height(this.pos.x, this.pos.z) + (def.hover || 0);
+    if (def.flyer) {
+      // altitude control: cruise above the ground, dive to the player to strike
+      // (a snipers holds a high standoff and never dives: diveRange < 0)
+      const groundY = this.mgr.terrain.height(this.pos.x, this.pos.z);
+      const cruise = groundY + def.cruise;
+      let ty;
+      if (def.diveRange > 0 && dist < def.diveRange) ty = player.pos.y + def.height * 0.25;
+      else ty = Math.max(cruise, player.pos.y * 0.55 + groundY * 0.2 + def.cruise * 0.45);
+      ty = Math.max(ty, groundY + 1.0);
+      this.flyY = damp(this.flyY, ty, def.climb, dt);
+      this.pos.y = this.flyY;
+    } else {
+      this.pos.y = this.mgr.terrain.height(this.pos.x, this.pos.z) + (def.hover || 0);
+    }
 
     this._animate(dt, dist);
     // apply visual bob (float/stomp) on top of pos
@@ -668,6 +919,7 @@ export class Enemy {
     const vReach = def.reach + def.height * 0.65;
 
     if (this.boss) this._bossBehavior(dt, dist, vGap, player);
+    else if (def.shooter) this._shootBehavior(dt, dist, player);
     else {
       // attack on contact (must be within horizontal AND vertical reach)
       this.attackTimer -= dt;
@@ -696,8 +948,9 @@ export class Enemy {
     this._applyFlash();
   }
 
-  // Boss: telegraphed ground-slam AoE + periodic add-spawns.
+  // Boss dispatch: the yeti fights differently (ranged snowball-thrower).
   _bossBehavior(dt, dist, vGap, player) {
+    if (this.type === 'yeti') { this._yetiBehavior(dt, dist, vGap, player); return; }
     const def = this.def;
     const p = this.parts;
     if (this._slamT >= 0) {
@@ -737,6 +990,141 @@ export class Enemy {
     }
   }
 
+  // The yeti: a ranged brute. Hurls telegraphed snowballs (dash-reflectable),
+  // ground-slams anyone who closes in, staggers when its own snowball comes back,
+  // and calls in flying ravens.
+  _yetiBehavior(dt, dist, vGap, player) {
+    const def = this.def;
+    const p = this.parts;
+
+    // reeling from a reflected snowball — drop everything and stagger
+    if (this._stagger > 0) {
+      this._stagger -= dt;
+      p.pelvis.rotation.x = damp(p.pelvis.rotation.x, -0.45, 6, dt);
+      if (p.armL) { p.armL.rotation.x = damp(p.armL.rotation.x, -1.7, 6, dt); p.armR.rotation.x = damp(p.armR.rotation.x, -1.7, 6, dt); }
+      this._chargeT = -1; this._slamT = -1;
+      return;
+    }
+    p.pelvis.rotation.x = damp(p.pelvis.rotation.x, 0.05, 5, dt);
+
+    // ground-slam (melee) in progress
+    if (this._slamT >= 0) {
+      this._slamT += dt;
+      const wind = 0.6;
+      if (this._slamT < wind) { const e = this._slamT / wind; if (p.armL) { p.armL.rotation.x = -2.6 * e; p.armR.rotation.x = -2.6 * e; } }
+      else if (this._slamT < wind + 0.12) {
+        if (p.armL) { p.armL.rotation.x = 0.5; p.armR.rotation.x = 0.5; }
+        if (!this._slammed) {
+          this._slammed = true;
+          const gp = new THREE.Vector3(this.pos.x, this.pos.y + 0.2, this.pos.z);
+          this.mgr.fx.shockwave(gp, 0xcfe6ff, 11, 0.55); this.mgr.fx.addTrauma(0.65);
+          this.mgr.audio.bossSlam(this.mgr.panFor(this.pos));
+          const slamR = def.reach + 4;
+          if (dist < slamR && vGap < def.height * 0.8 + 2) player.takeDamage(def.damage, this.pos);
+        }
+      } else { this._slamT = -1; this._slammed = false; this.attackTimer = def.attackCd; }
+      return;
+    }
+
+    // winding up / releasing a snowball throw
+    if (this._chargeT >= 0) {
+      this._chargeT += dt;
+      const e = clamp01(this._chargeT / YETI_WINDUP);
+      if (p.armR) { p.armR.rotation.x = -2.9 * e; p.armR.rotation.z = -0.5 * e; }
+      if (p.pelvis) p.pelvis.rotation.y = 0.35 * e;
+      if (this._chargeT >= YETI_WINDUP) {
+        this._throwSnowball(player);
+        this._chargeT = -1;
+        if (p.armR) { p.armR.rotation.x = 1.0; p.armR.rotation.z = 0; }   // follow-through
+        if (p.pelvis) p.pelvis.rotation.y = -0.25;
+        this.shootTimer = def.attackCd + rand(0.3, 1.3);
+      }
+      return;
+    }
+    if (p.pelvis) p.pelvis.rotation.y = damp(p.pelvis.rotation.y, 0, 5, dt);
+
+    // choose: slam if the player is right on top of it, else lob a snowball
+    if (dist <= def.reach + player.radius + 1.5 && vGap < def.height) {
+      this.attackTimer -= dt;
+      if (this.attackTimer <= 0) { this._slamT = 0; this._slammed = false; }
+    } else {
+      this.shootTimer -= dt;
+      if (this.shootTimer <= 0 && dist < 62 && this.mgr.projectiles) {
+        this._chargeT = 0;
+        this.mgr.audio.yetiRoar(this.mgr.panFor(this.pos));
+      }
+    }
+
+    // call in flying ravens to pressure the sky
+    this._addCd -= dt;
+    if (this._addCd <= 0) {
+      this._addCd = rand(8, 12);
+      if (this.mgr.aliveCount() < 8) this.mgr.spawnAdds(this.pos, 2, 'raven');
+    }
+  }
+
+  _throwSnowball(player) {
+    const def = this.def;
+    const origin = new THREE.Vector3(this.pos.x, this.pos.y + this._muzzleY, this.pos.z);
+    const fwd = new THREE.Vector3(Math.sin(this.facing), 0, Math.cos(this.facing));
+    origin.addScaledVector(fwd, this._muzzleZ);
+    const target = new THREE.Vector3(player.pos.x, player.pos.y + 1.2, player.pos.z);
+    // solve the lob: pick the launch direction so the arc (under the projectile's
+    // own gravity, launched at SNOWBALL_SPEED) lands on the target. Iterate a few
+    // times because the flight time depends on the (unknown) horizontal speed.
+    const flatX = target.x - origin.x, flatZ = target.z - origin.z;
+    const D = Math.hypot(flatX, flatZ);
+    const dir = new THREE.Vector3(flatX, target.y - origin.y, flatZ);
+    let t = D / Math.max(1, SNOWBALL_SPEED);
+    for (let k = 0; k < 4; k++) {
+      const drop = 0.5 * SNOWBALL_GRAV * t * t;
+      dir.set(flatX, (target.y + drop) - origin.y, flatZ);
+      const len = dir.length() || 1;
+      const horiz = SNOWBALL_SPEED * (D / len);          // actual horizontal speed
+      t = D / Math.max(1, horiz);
+    }
+    if (dir.lengthSq() < 1e-6) dir.set(0, 0, 1);
+    dir.normalize();
+    this.mgr.projectiles.spawn('snowball', origin, dir, { owner: 'enemy', damage: def.damage + this.mgr.wave * 0.4 });
+    this.mgr.audio.snowballThrow(this.mgr.panFor(this.pos));
+    this.mgr.fx.addTrauma(0.15);
+  }
+
+  // Sniper: telegraph with a growing charge glow, then fire a dodgeable bolt.
+  _shootBehavior(dt, dist, player) {
+    const def = this.def;
+    if (!this.mgr.projectiles) return;
+    if (this._chargeT >= 0) {
+      this._chargeT += dt;
+      const k = clamp01(this._chargeT / SEER_CHARGE);
+      if (this.parts.eye) { this.parts.eye.scale.setScalar(1 + k * 0.7); this.flash = Math.max(this.flash, k * 0.5); }
+      if (this._chargeT >= SEER_CHARGE) {
+        this._fireBolt(player);
+        this._chargeT = -1;
+        this.shootTimer = def.attackCd;
+        if (this.parts.eye) this.parts.eye.scale.setScalar(1);
+      }
+    } else {
+      this.shootTimer -= dt;
+      if (this.shootTimer <= 0 && dist < 46 && this.spawnT >= 1) {
+        this._chargeT = 0;
+        this.mgr.audio.seerCharge(this.mgr.panFor(this.pos));
+      }
+    }
+  }
+
+  _fireBolt(player) {
+    const def = this.def;
+    const origin = new THREE.Vector3(this.pos.x, this.pos.y + this._muzzleY, this.pos.z);
+    const aim = new THREE.Vector3(player.pos.x, player.pos.y + 1.1, player.pos.z).sub(origin);
+    if (aim.lengthSq() < 1e-6) aim.set(0, 0, 1);
+    aim.normalize();
+    origin.addScaledVector(aim, this._muzzleZ + 0.35);
+    this.mgr.projectiles.spawn('bolt', origin, aim, { owner: 'enemy', damage: def.damage + this.mgr.wave * 0.4 });
+    this.mgr.audio.enemyShoot(this.mgr.panFor(this.pos));
+    this.mgr.fx.impactLight(origin, def.accent, 5, 0.1);
+  }
+
   _animate(dt, dist) {
     const def = this.def, p = this.parts;
     const moveSpd = Math.hypot(this.vel.x, this.vel.z);
@@ -765,6 +1153,16 @@ export class Enemy {
           this._stepSign = sgn;
           if (dist < 28 && stride > 0.4) this.mgr.fx.addTrauma(0.12);
         }
+        break;
+      }
+      case 'fly': {
+        // wing flap (fast, driven by rate), forward-pitched diving posture
+        const flap = Math.sin(this.phase * 1.6);
+        if (p.wingL) { p.wingL.rotation.z = flap * 0.85; p.wingR.rotation.z = -flap * 0.85; }
+        if (p.halo) { p.halo.rotation.y += dt * (this._chargeT >= 0 ? 7 : 1.4); }   // seer's shards orbit, faster while charging
+        p.pelvis.rotation.x = damp(p.pelvis.rotation.x, (def.shooter ? 0.0 : 0.25) + this.hurtLean, 6, dt);
+        if (p.head) p.head.rotation.x = def.shooter ? 0 : -0.12;
+        this.bob = Math.sin(this.phase * 1.6) * 0.1;
         break;
       }
       case 'float': {
@@ -825,7 +1223,15 @@ export class Enemy {
     // default: crumple to the ground, then sink + fade
     const fallAmt = clamp01(t / 0.5);
     this.group.rotation.x = lerp(0, Math.PI * 0.5, easeOut(fallAmt));
-    this.pos.y = this.mgr.terrain.height(this.pos.x, this.pos.z);
+    const gy = this.mgr.terrain.height(this.pos.x, this.pos.z);
+    if (def.flyer && this.pos.y > gy + 0.1) {
+      // shot out of the sky: tumble and plummet until it hits the ground
+      this._deathVy -= 30 * dt;
+      this.pos.y = Math.max(gy, this.pos.y + this._deathVy * dt);
+      this.group.rotation.z += dt * 5;
+    } else {
+      this.pos.y = gy;
+    }
     if (t > 1.4) { sink = (t - 1.4) * 0.6; fade = clamp01(1 - (t - 1.4) / 1.0); }
     this.group.position.set(this.pos.x, this.pos.y - sink, this.pos.z);
     this._setOpacity(fade);
@@ -874,6 +1280,7 @@ export class EnemyManager {
     this.boundary = world.playRadius;
     this.player = player;
     this.enemies = [];
+    this.projectiles = null;   // set by main; enemy shooters spawn bolts through it
     this.wave = 0; this.score = 0; this.kills = 0;
     this.spawnQueue = []; this.spawnTimer = 0; this.betweenWaves = 0; this.active = false;
     this.boss = null; this.isBossWave = false;
@@ -904,13 +1311,19 @@ export class EnemyManager {
     this.isBossWave = this.bossWaveFor(n);
 
     if (this.isBossWave) {
-      // a boss plus a light escort. The boss hp climbs each boss encounter.
+      // a boss plus a fitting escort. The boss hp climbs each boss encounter.
       const bossNum = n / 5;
-      const bossHp = 1 + (bossNum - 1) * 0.7;
-      this.spawnQueue.push({ t: 'colossus', hpScale: bossHp, speedScale: 1, boss: true });
+      // the deep-winter waves bring THE YETI in its blizzard; earlier ones the colossus
+      const bossType = n >= 10 ? 'yeti' : 'colossus';
+      const bossHp = 1 + (bossNum - 1) * 0.6;
+      this.spawnQueue.push({ t: bossType, hpScale: bossHp, speedScale: 1, boss: true });
       const escort = 3 + bossNum;
       for (let i = 0; i < escort; i++) {
-        this.spawnQueue.push({ t: Math.random() < 0.5 ? 'stalker' : 'husk', hpScale, speedScale });
+        // the yeti is escorted by ravens (they can reach you in the sky)
+        const t = bossType === 'yeti'
+          ? (Math.random() < 0.5 ? 'raven' : 'stalker')
+          : (Math.random() < 0.5 ? 'stalker' : 'husk');
+        this.spawnQueue.push({ t, hpScale, speedScale });
       }
       // fewer at once during the boss so the boss reads clearly
       this.maxConcurrent = 6;
@@ -922,7 +1335,9 @@ export class EnemyManager {
       if (n >= 1) pool.push(['stalker', clamp(0.4 + n * 0.12, 0, 1.6)]);
       if (n >= 2) pool.push(['wisp', clamp(0.2 + (n - 2) * 0.1, 0, 0.9)]);
       if (n >= 3) pool.push(['juggernaut', clamp(0.15 + (n - 3) * 0.06, 0, 0.6)]);
+      if (n >= 3) pool.push(['raven', clamp(0.3 + (n - 3) * 0.1, 0, 1.1)]);     // flyers reach the sky-islands
       if (n >= 4) pool.push(['bloater', clamp(0.2 + (n - 4) * 0.08, 0, 0.8)]);
+      if (n >= 5) pool.push(['seer', clamp(0.15 + (n - 5) * 0.06, 0, 0.55)]);    // perched snipers, after the first few levels
       const total = pool.reduce((a, b) => a + b[1], 0);
       for (let i = 0; i < count; i++) {
         let r = Math.random() * total, t = pool[0][0];
@@ -939,12 +1354,12 @@ export class EnemyManager {
   }
 
   // spawn near a point (boss reinforcements) instead of the arena edge
-  spawnAdds(nearPos, count) {
+  spawnAdds(nearPos, count, type = null) {
     for (let i = 0; i < count; i++) {
       const a = rand(0, Math.PI * 2), r = rand(4, 8);
       let x = nearPos.x + Math.cos(a) * r, z = nearPos.z + Math.sin(a) * r;
       this.clampPoint(x, z);
-      const t = Math.random() < 0.6 ? 'stalker' : 'husk';
+      const t = type || (Math.random() < 0.6 ? 'stalker' : 'husk');
       const e = new Enemy(this, t, new THREE.Vector3(this._cx, 0, this._cz), 1 + this.wave * 0.05, 1);
       this.enemies.push(e);
     }

@@ -32,6 +32,12 @@ const JUMP_BUFFER = 0.16;
 const JUMP_CUT_GRACE = 0.11;      // short taps still get a real jump before the cut
 const DOUBLE_JUMP_CUT_GRACE = 0.16;
 const STICK = 0.42;               // snap-to-ground (small, so it never eats a jump)
+const PLATFORM_GRACE = 0.5;       // feet must be within this of a sky-island top for it to count as ground
+// Ledge-mantle: brushing the SIDE of a sky-island near its top vaults you up onto
+// it — a fast, momentum-preserving climb so verticality never breaks your flow.
+const MANTLE_REACH = 2.9;         // how far below the top your feet can be and still grab
+const MANTLE_MARGIN = 0.75;       // horizontal band outside the rim that counts as contact
+const MANTLE_COOLDOWN = 0.35;     // don't re-fire mid-vault
 const SLIDE_BOOST = 1.26, SLIDE_FRICTION = 2.4, SLIDE_MIN = 7.5, SLIDE_TIME = 0.8;
 
 // dash: charge-based (2 charges, regenerating) with a tiny anti-double cooldown.
@@ -44,9 +50,10 @@ const DASH_HIT_RADIUS = 1.7;       // how close an enemy must be to be dash-stru
 const ADS_WALK = 4.6;              // capped move speed while sighted
 
 export class Controller {
-  constructor(terrain, colliders, boundary) {
+  constructor(terrain, colliders, boundary, platforms = []) {
     this.terrain = terrain;
     this.colliders = colliders;      // [{x,z,r}]
+    this.platforms = platforms;      // [{x,z,y,r}] one-way sky-island tops
     this.boundary = boundary;        // max radius from origin
     this.pos = new THREE.Vector3(0, 0, 0);
     this.pos.y = terrain.height(0, 0);
@@ -60,6 +67,8 @@ export class Controller {
     this._sliding = false; this._slideTimer = 0; this._jumpedThisFrame = false;
     this._airJumps = 0;
 
+    this._mantleCd = 0;              // ledge-mantle re-fire cooldown
+
     // charge-based dash
     this._dashTimer = 0; this._dashCooldown = 0; this._dashRecharge = 0; this._dashBuffer = 0;
     this._dashIFrame = 0;            // invulnerable window (dash + a little after)
@@ -70,14 +79,14 @@ export class Controller {
 
     this.speed = 0; this.horizSpeed = 0;
     this.isSprinting = false; this.isMoving = false; this.isCrouching = false;
-    this.events = { landed: 0, jumped: false, doubleJumped: false, dashed: false, stepped: false, slid: false };
+    this.events = { landed: 0, jumped: false, doubleJumped: false, dashed: false, stepped: false, slid: false, mantled: false };
   }
 
   reset(x = 0, z = 0) {
     this.pos.set(x, this.terrain.height(x, z), z);
     this.vel.set(0, 0, 0);
     this.onGround = true; this.crouchT = 0; this._sliding = false;
-    this._airJumps = 0; this._jumpCutGrace = 0;
+    this._airJumps = 0; this._jumpCutGrace = 0; this._mantleCd = 0;
     this._dashTimer = 0; this._dashCooldown = 0; this._dashRecharge = 0; this._dashBuffer = 0; this._dashIFrame = 0;
     this.dashCharges = this.maxDashCharges; this.dashRechargeRatio = 1;
   }
@@ -92,10 +101,11 @@ export class Controller {
 
   update(dt, input, wishYaw) {
     const ev = this.events;
-    ev.landed = 0; ev.jumped = false; ev.doubleJumped = false; ev.dashed = false; ev.stepped = false; ev.slid = false;
+    ev.landed = 0; ev.jumped = false; ev.doubleJumped = false; ev.dashed = false; ev.stepped = false; ev.slid = false; ev.mantled = false;
     this._jumpedThisFrame = false;
     this._dashCooldown = Math.max(0, this._dashCooldown - dt);
     this._dashIFrame = Math.max(0, this._dashIFrame - dt);
+    this._mantleCd = Math.max(0, this._mantleCd - dt);
 
     // buffer the dash input (responsive, like the jump buffer)
     if (input.wasPressed('dash')) this._dashBuffer = DASH_BUFFER;
@@ -192,9 +202,14 @@ export class Controller {
     this.pos.z += this.vel.z * dt;
     this._collide();
 
-    // vertical: follow terrain, land
+    // ledge-mantle: brushing a sky-island's side near its top vaults you up
+    if (!dashNow) this._tryMantle(wishDir);
+
+    // vertical: follow terrain (or a sky-island top), land
     const wasGround = this.onGround;
-    const groundH = this.terrain.height(this.pos.x, this.pos.z);
+    // ground height = terrain, or the highest one-way platform we're over and
+    // whose top we're at/above (footY = pos.y BEFORE this frame's fall)
+    const groundH = this.groundHeight(this.pos.x, this.pos.z, this.pos.y);
     const fallSpeed = -this.vel.y;
     this.pos.y += this.vel.y * dt;
     if (this.pos.y <= groundH + STICK && this.vel.y <= 0.001) {
@@ -213,6 +228,50 @@ export class Controller {
       this._stepDist += this.horizSpeed * dt;
       const stride = this.isSprinting ? 2.6 : 1.9;
       if (this._stepDist >= stride) { this._stepDist = 0; ev.stepped = true; }
+    }
+  }
+
+  // Effective ground under (x,z): the terrain, raised to a sky-island top when
+  // the player is horizontally over it AND their feet are at/above that top —
+  // giving classic one-way platforms (jump up through, land coming down).
+  groundHeight(x, z, footY) {
+    let g = this.terrain.height(x, z);
+    for (const p of this.platforms) {
+      const dx = x - p.x, dz = z - p.z;
+      if (dx * dx + dz * dz <= p.r * p.r && p.y > g && footY >= p.y - PLATFORM_GRACE) g = p.y;
+    }
+    return g;
+  }
+
+  // If the player is pressed against the SIDE of a sky-island just below its top,
+  // vault them up and over the lip — a quick, momentum-preserving mantle so the
+  // vertical play never stalls into a stop-and-clamber.
+  _tryMantle(wishDir) {
+    if (this._mantleCd > 0) return;
+    const feetY = this.pos.y;
+    for (const p of this.platforms) {
+      const dx = this.pos.x - p.x, dz = this.pos.z - p.z;
+      const d = Math.hypot(dx, dz);
+      if (d < 1e-3) continue;
+      // at the rim: near the edge radius, and feet a short way below the top
+      if (d < p.r - 0.6 || d > p.r + RADIUS + MANTLE_MARGIN) continue;
+      const below = p.y - feetY;
+      if (below <= 0.4 || below > MANTLE_REACH) continue;
+      // intent: don't yank the player if they're clearly moving/steering AWAY
+      const inX = -dx / d, inZ = -dz / d;
+      const velInto = this.vel.x * inX + this.vel.z * inZ;
+      const wishInto = wishDir.x * inX + wishDir.z * inZ;
+      if (velInto < -1.5 || wishInto < -0.4) continue;
+      // pop up just over the lip, carry inward, keep the horizontal pace
+      this.vel.y = Math.sqrt(2 * GRAVITY * (below + 0.65));
+      this.vel.x += inX * 5.5; this.vel.z += inZ * 5.5;
+      this._jumpCutGrace = 0.3;      // protect the vault from the variable-jump cut
+      this._mantleCd = MANTLE_COOLDOWN;
+      this._airJumps = 0;            // refresh air options so you can keep chaining
+      this._sliding = false;
+      this.onGround = false;
+      this.events.mantled = true;
+      return;
     }
   }
 

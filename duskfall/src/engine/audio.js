@@ -234,9 +234,43 @@ export class Audio {
   }
 
   enemyShoot(pan = 0) {
+    // a sniper bolt release: a sharp zap with a whistling tail
     const dest = this._panned(pan);
     this._noiseBurst({ dur: 0.1, vol: 0.3, type: 'bandpass', freq: 1400, sweepTo: 500, q: 1.5, dest });
-    this._tone({ freq: 300, freq2: 90, dur: 0.1, vol: 0.2, type: 'square', dest });
+    this._tone({ freq: 640, freq2: 180, dur: 0.16, vol: 0.22, type: 'sawtooth', dest });
+  }
+  seerCharge(pan = 0) {
+    // a rising, ominous telegraph so you know to dodge
+    const dest = this._panned(pan);
+    this._tone({ freq: 180, freq2: 720, dur: 0.7, vol: 0.16, type: 'triangle', dest });
+    this._noiseBurst({ dur: 0.6, vol: 0.08, type: 'bandpass', freq: 700, sweepTo: 2400, q: 1.2, dest });
+  }
+  snowballThrow(pan = 0) {
+    // a heavy grunt + a low whoomph of a huge mass being hurled
+    const dest = this._panned(pan);
+    this._noiseBurst({ dur: 0.28, vol: 0.34, type: 'lowpass', freq: 520, sweepTo: 140, dest });
+    this._tone({ freq: 150, freq2: 60, dur: 0.3, vol: 0.28, type: 'sawtooth', dest });
+  }
+  snowballImpact(pan = 0) {
+    // a wet, crunchy pack of snow bursting
+    const dest = this._panned(pan);
+    this._noiseBurst({ dur: 0.16, vol: 0.34, type: 'lowpass', freq: 900, sweepTo: 160, q: 0.8, dest });
+    this._noiseBurst({ dur: 0.1, vol: 0.18, type: 'highpass', freq: 3000, sweepTo: 1200, dest });
+    this._tone({ freq: 110, freq2: 50, dur: 0.14, vol: 0.16, type: 'sine', dest });
+  }
+  snowballReflect(pan = 0) {
+    // a satisfying, bright "PING" of batting it back
+    const dest = this._panned(pan);
+    this._tone({ freq: 900, freq2: 1600, dur: 0.14, vol: 0.34, type: 'triangle', dest });
+    this._tone({ freq: 500, freq2: 900, dur: 0.1, vol: 0.2, type: 'square', dest });
+    this._noiseBurst({ dur: 0.12, vol: 0.24, type: 'bandpass', freq: 2000, sweepTo: 600, q: 1, dest });
+  }
+  yetiRoar(pan = 0) {
+    // a huge, cavernous bellow
+    const dest = this._panned(pan);
+    this._tone({ freq: 70, freq2: 130, dur: 0.9, vol: 0.4, type: 'sawtooth', dest });
+    this._tone({ freq: 105, freq2: 62, dur: 0.8, vol: 0.26, type: 'sawtooth', dest });
+    this._noiseBurst({ dur: 0.7, vol: 0.22, type: 'lowpass', freq: 500, sweepTo: 1300, dest });
   }
 
   playerHurt() {
@@ -255,6 +289,11 @@ export class Audio {
     this._tone({ freq: 440, freq2: 880, dur: 0.14, vol: 0.22, type: 'triangle' });
   }
   slide() { this._noiseBurst({ dur: 0.5, vol: 0.22, type: 'bandpass', freq: 1600, sweepTo: 300, q: 0.8 }); }
+  mantle() {
+    // a quick scramble-and-vault: a short grunt of effort + a rising whoosh
+    this._noiseBurst({ dur: 0.12, vol: 0.18, type: 'bandpass', freq: 700, sweepTo: 2000, q: 0.7 });
+    this._tone({ freq: 260, freq2: 520, dur: 0.12, vol: 0.18, type: 'triangle' });
+  }
   dash() {
     // a fast air-tearing swoosh with a low body thump
     this._noiseBurst({ dur: 0.24, vol: 0.34, type: 'bandpass', freq: 900, sweepTo: 3400, q: 0.6 });

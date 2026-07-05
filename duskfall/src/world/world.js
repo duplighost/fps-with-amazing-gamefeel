@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { buildTerrain } from './terrain.js';
 import { buildFoliage } from './foliage.js';
+import { buildPlatforms } from './platforms.js';
 import { rand, lerp, clamp01 } from '../engine/math.js';
 
 const degToRad = THREE.MathUtils.degToRad;
@@ -55,6 +56,7 @@ export function buildWorld(scene, renderer) {
 
   const terrain = buildTerrain(scene);
   const foliage = buildFoliage(scene, terrain);
+  const platforms = buildPlatforms(scene, terrain);
   const motes = buildMotes(scene);
   const snow = buildSnow(scene);
 
@@ -74,8 +76,13 @@ export function buildWorld(scene, renderer) {
     else out.copy(_b).lerp(_d, clamp01((season - 0.55) / 0.45));
   };
 
+  // a boss (the yeti) can whip up the storm beyond the natural seasonal level
+  let stormBoost = 0;
+  let _last = { season: 0, haunt: 0, storm: 0 };
+
   function setSeason(season, haunt = 0, storm = 0) {
     season = clamp01(season); haunt = clamp01(haunt); storm = clamp01(storm);
+    _last = { season, haunt, storm };
     // sky: hazier, greyer, and the sun sinks + cools
     u.turbidity.value = lerp(7, 12, season);
     u.rayleigh.value = lerp(2.4, 0.55, season);
@@ -101,20 +108,31 @@ export function buildWorld(scene, renderer) {
     seasonCol(foliage.mats.rock.color, FOL.rock, season);
     seasonCol(foliage.mats.grass.color, FOL.grass, season);
     foliage.grass.visible = season < 0.82;      // snow swallows the tufts
-    // particles: pollen motes give way to snow
-    snow.setIntensity(clamp01((season - 0.32) / 0.68), storm);
+    // sky-islands tint with the ground
+    platforms.setSeason(season);
+    // particles: pollen motes give way to snow (a boss can force the storm harder)
+    const st = Math.max(storm, stormBoost);
+    snow.setIntensity(clamp01(Math.max((season - 0.32) / 0.68, stormBoost)), st);
+    // the storm also thickens the fog when a boss whips it up
+    if (stormBoost > 0.01) scene.fog.density += stormBoost * 0.018;
     motes.setFade(1 - clamp01(season * 1.4));
   }
+  // ramp an extra storm layer (0..1) on top of the season. Just sets the level;
+  // the per-frame setSeason() call in the game loop applies it (via the Math.max
+  // in the snow line + the fog bump), so there's no need to re-tint here.
+  function setStormBoost(v) { stormBoost = clamp01(v); }
   setSeason(0);
 
   return {
     terrain,
     colliders: foliage.colliders,
-    solids: [terrain.mesh, ...foliage.solids],
+    platforms: platforms.platforms,
+    solids: [terrain.mesh, ...foliage.solids, ...platforms.solids],
     sun,
     sunDir,
     playRadius: terrain.playRadius,
     setSeason,
+    setStormBoost,
     update(dt, playerPos) {
       motes.update(dt, playerPos);
       snow.update(dt, playerPos);

@@ -13,6 +13,7 @@ import { Weapons } from './weapons/weapon.js';
 import { buildWorld } from './world/world.js';
 import { EnemyManager } from './enemies/enemy.js';
 import { PickupManager } from './world/pickups.js';
+import { ProjectileManager } from './world/projectiles.js';
 import { HUD } from './ui/hud.js';
 import { buildComposer } from './gfx/post.js';
 
@@ -61,7 +62,7 @@ class Game {
     this.fx = new FX(this.scene, this.camera);
     this.audio = new Audio();
     this.input = new Input(canvas);
-    this.controller = new Controller(this.world.terrain, this.world.colliders, this.world.playRadius + 4);
+    this.controller = new Controller(this.world.terrain, this.world.colliders, this.world.playRadius + 4, this.world.platforms);
     this.cam = new CameraRig(this.camera);
 
     this.health = MAX_HEALTH;
@@ -79,10 +80,13 @@ class Game {
 
     this.enemies = new EnemyManager(this.scene, this.fx, this.audio, this.world, this.player);
     this.pickups = new PickupManager(this.scene, this.world.terrain);
+    this.projectiles = new ProjectileManager(this.scene, this.fx, this.audio, this.world.terrain);
+    this.enemies.projectiles = this.projectiles;
     this._dashHitSet = new Set();     // enemies struck by the current dash
     this._dashKills = 0; this._dashFinishers = 0;
     this.slowmoMeter = 1; this._slowmoWasActive = false;
     this.season = 0;   // 0 = summer … 1 = deep winter, eased toward the wave target
+    this._stormBoost = 0;  // a live yeti whips the field into a full blizzard
     this.weapons = new Weapons({
       fx: this.fx, audio: this.audio, cam: this.cam, mainCamera: this.camera,
       hitscan: (o, d, r) => this.hitscan(o, d, r),
@@ -152,7 +156,7 @@ class Game {
     this.enemies.onCountChange = (n) => this.hud.setEnemies(n);
     this.enemies.onWaveStart = (n, isBoss) => {
       this.hud.setWave(n);
-      if (isBoss) this.hud.banner('⚠  BOSS  ⚠', 'THE COLOSSUS awakens', '#ff6a3a');
+      if (isBoss) this.hud.banner('⚠  BOSS  ⚠', (n >= 10 ? 'THE YETI' : 'THE COLOSSUS') + ' awakens', '#ff6a3a');
       else this.hud.banner('WAVE ' + n, (n % 5 === 4) ? 'brace — a boss looms next' : 'incoming', '#ffce7a');
     };
     this.enemies.onWaveCleared = (n) => {
@@ -164,6 +168,7 @@ class Game {
       if (event === 'spawn') {
         this.hud.showBoss(boss.def.name || 'BOSS');
         this.audio.bossIntro();
+        if (boss.type === 'yeti') setTimeout(() => this.audio.yetiRoar(0), 700);
         this.fx.addTrauma(0.5);
       } else if (event === 'update') {
         this.hud.updateBoss(boss.health / boss.maxHealth);
@@ -171,7 +176,7 @@ class Game {
         this.hud.hideBoss();
         const bonus = 2000;
         this.score += bonus; this.hud.setScore(this.score);
-        this.hud.banner('COLOSSUS DOWN', '+' + bonus + ' bonus', '#b6f36a');
+        this.hud.banner((boss.def.name || 'BOSS') + ' DOWN', '+' + bonus + ' bonus', '#b6f36a');
         this.audio.bossDeath();
         this.fx.addSlowmo(0.12); this.fx.addTrauma(0.85);
         // spectacle: chained explosions + a guaranteed loot pile
@@ -256,9 +261,11 @@ class Game {
     this.weapons.reset();
     this.enemies.reset();
     this.pickups.reset();
+    this.projectiles.reset();
+    this.world.setStormBoost(0);
     this.hud.hideBoss();
     this.slowmoMeter = 1; this._slowmoWasActive = false;
-    this.season = 0; this.world.setSeason(0, 0, 0);   // back to summer
+    this.season = 0; this._stormBoost = 0; this.world.setSeason(0, 0, 0);   // back to summer
     this._dashHitSet.clear();
     this.fx.trauma = 0; this.fx.hitstop = 0; this.fx.slowmo = 1;
     this.health = MAX_HEALTH; this.invuln = 0; this.lastDamage = this.time;
@@ -350,6 +357,7 @@ class Game {
       this._movementEvents();
       if (gdt > 0) {
         this.enemies.update(gdt);
+        this._updateProjectiles(gdt);
         this.world.update(gdt, this.controller.pos);
         this._regen(gdt);
         if (this.comboTimer > 0) { this.comboTimer -= gdt; if (this.comboTimer <= 0) this.combo = 0; }
@@ -362,7 +370,11 @@ class Game {
       this.season = damp(this.season, seasonTarget, 0.4, realDt);
       const haunt = clamp01((this.season - 0.15) / 0.85);
       const storm = clamp01((this.season - 0.8) / 0.2);
-      this.world.setSeason(this.season, haunt, storm);
+      // a live yeti forces a full whiteout blizzard on top of the season
+      const yetiActive = this.enemies.boss && this.enemies.boss.type === 'yeti' && this.enemies.boss.alive;
+      this._stormBoost = damp(this._stormBoost, yetiActive ? 1 : 0, 1.5, realDt);
+      this.world.setStormBoost(this._stormBoost);
+      this.world.setSeason(this.season, haunt, Math.max(storm, this._stormBoost));
 
       // adaptive music: swell with the number of enemies bearing down, a boss, or
       // low health; cool + muffle the whole score as winter/haunt deepen
@@ -396,6 +408,12 @@ class Game {
     if (ev.landed > 0) this.audio.land(ev.landed);
     if (ev.stepped) this.audio.footstep(this.controller.isSprinting ? 1 : 0.5);
     if (ev.slid) this.audio.slide();
+    if (ev.mantled) {
+      this.audio.mantle();
+      this.cam.addFovPunch(3);
+      const m = this.controller.pos;
+      this.fx.dashDust(new THREE.Vector3(m.x, m.y + 0.3, m.z), new THREE.Vector3(0, -1, 0));
+    }
     if (ev.doubleJumped) {
       this.audio.doubleJump();
       this.cam.addFovPunch(4);
@@ -414,6 +432,36 @@ class Game {
       const p = this.controller.pos;
       this.fx.dashDust(new THREE.Vector3(p.x, p.y + 0.2, p.z), this.controller.dashDir);
     }
+  }
+
+  // Move enemy bolts + boss snowballs, resolve hits, and let a dash reflect a
+  // snowball back into the boss for a big chunk.
+  _updateProjectiles(dt) {
+    this.projectiles.update(dt, {
+      player: this.player,
+      controller: this.controller,
+      enemies: this.enemies,
+      boss: this.enemies.boss,
+      onHitPlayer: (dmg, pos) => this.playerTakeDamage(dmg, pos),
+      onReflect: (pos) => {
+        this.hud.hitMarker(false, false);
+        this.score += 40; this.hud.setScore(this.score);
+        this.hud.popText(pos, 'DEFLECT', this.camera, 'finisher');
+      },
+      onHitEnemy: (enemy, dmg, pos, reflected) => {
+        const dir = new THREE.Vector3(0, 0, 1);
+        const killed = enemy.takeDamage(dmg, pos, dir, false);
+        this.hud.popDamage(pos, dmg, false, this.camera);
+        if (reflected) {
+          // a reflected snowball staggers a boss and pays out
+          this.fx.addTrauma(0.4); this.fx.addHitstop(0.05);
+          enemy.knockback.set(0, 0, 0);
+          if (enemy.boss) { enemy._slamT = -1; enemy._stagger = 1.1; }
+          this.score += 120; this.hud.setScore(this.score);
+        }
+        if (killed) this.fx.addHitstop(0.08);
+      },
+    });
   }
 
   // While dashing, strike every enemy the player sweeps through (once each);

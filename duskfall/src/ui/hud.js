@@ -99,6 +99,8 @@ export class HUD {
             <div><b>SHIFT / F</b> dash · strike</div><div><b>CTRL</b> crouch / slide</div>
             <div><b>L-CLICK</b> fire</div><div><b>R-CLICK</b> aim (iron sights)</div>
             <div><b>Q / MID-MOUSE</b> slow-mo</div><div><b>1 / 2 / WHEEL</b> weapons</div>
+            <div class="wide"><b>climb the sky-islands</b> — jump + air-dash up; brush a ledge to mantle onto it</div>
+            <div class="wide"><b>the yeti's snowballs</b> — dash into one to bat it back for massive damage</div>
             <div class="wide"><b>no reload</b> — dash-strike to finish the weak; grab the ammo &amp; health they drop</div>
           </div>
         </div>
