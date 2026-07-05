@@ -155,7 +155,8 @@ export class Input {
   }
 
   requestLock() {
-    if (!this.locked && this.el.requestPointerLock) this.el.requestPointerLock();
+    if (!this.locked && this.el.requestPointerLock) return this.el.requestPointerLock();
+    return null;
   }
   exitLock() { if (document.exitPointerLock) document.exitPointerLock(); }
 

@@ -452,10 +452,14 @@ export class HUD {
       el.addEventListener('click', (e) => { e.stopPropagation(); pick(i); });
       wrap.appendChild(el);
     });
-    // keyboard 1/2/3 as an alternative to clicking
+    // keyboard 1/2/3 as an alternative to clicking. Capture + stopPropagation so the
+    // keypress never reaches the game's Input listener (which would switch weapons).
     this._upgKey = (e) => {
       const idx = { Digit1: 0, Digit2: 1, Digit3: 2 }[e.code];
-      if (idx !== undefined && idx < cards.length) { e.preventDefault(); pick(idx); }
+      if (idx !== undefined && idx < cards.length) {
+        e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+        pick(idx);
+      }
     };
     document.addEventListener('keydown', this._upgKey, true);
     this.el.upgradeOverlay.classList.add('show');

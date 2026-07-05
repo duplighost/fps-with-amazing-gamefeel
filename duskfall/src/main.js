@@ -324,6 +324,7 @@ class Game {
   }
 
   die() {
+    if (this._dashPin) this._detonatePin();
     this.state = 'dead';
     this.input.exitLock();
     this.audio.gameOver();
@@ -491,6 +492,7 @@ class Game {
         apply: () => { this.dropMods.grenade += 1.2; this.maxGrenades += 1; this.hud.setGrenades(this.grenades, this.maxGrenades); } },
     ];
     for (const c of cards) { const s = this.upgradeStacks[c.id] || 0; if (s > 0) c.stack = 'LV ' + (s + 1); }
+    if (this._dashPin) this._detonatePin();   // don't freeze a skewered corpse through the menu
     this.state = 'upgrading';
     if (!this.input.isTouch) this.input.exitLock();
     this.audio.waveClear();
@@ -506,7 +508,12 @@ class Game {
     this.hud.banner(card.name, card.desc, card.color || '#b6f36a');
     this.enemies.betweenWaves = 1.4;   // snappy resume into the next wave
     this.state = 'playing';
-    if (!this.input.isTouch) this.input.requestLock();
+    if (!this.input.isTouch) {
+      const pr = this.input.requestLock();
+      // if the browser rejects the re-lock, fall back to the pause menu (click to
+      // resume re-requests it) rather than stranding the run playing-but-unlocked
+      if (pr && pr.catch) pr.catch(() => { if (this.state === 'playing') { this.state = 'paused'; this.hud.showPause(); } });
+    }
   }
 
   // Lob a grenade along the aim with a slight arc. Powerful AoE, no self-damage.
@@ -565,12 +572,13 @@ class Game {
     // kill can detonate+dispose the previous corpse, mutating the live array.
     for (const e of this.enemies.enemies.slice()) {
       if (!e.alive || this._dashHitSet.has(e)) continue;
+      if (Math.abs(e.pos.y - cp.y) > e.def.height + this.controller.dashHitRadius) continue;   // don't carve a flyer perched high overhead
       const dx = e.pos.x - cp.x, dz = e.pos.z - cp.z;
       const rr = this.controller.dashHitRadius + e.def.radius;
       if (dx * dx + dz * dz <= rr * rr) {
         this._dashHitSet.add(e);
         const killed = this._dashStrike(e);
-        if (killed) this._pinCorpse(e);
+        if (killed && !e.boss) this._pinCorpse(e);   // bosses die with their own big spectacle, never skewered
       }
     }
     // (b) stop pass — after a committed lunge, halt on the nearest SURVIVOR we
@@ -580,6 +588,7 @@ class Game {
     let best = null, bestD2 = Infinity;
     for (const e of this._dashHitSet) {
       if (!e.alive) continue;
+      if (Math.abs(e.pos.y - cp.y) > e.def.height * 0.6 + 1.2) continue;   // roughly at your level, not far above/below
       const dx = e.pos.x - cp.x, dz = e.pos.z - cp.z;
       const stop = this.player.radius + e.def.radius + DASH_CONTACT_MARGIN;
       const d2 = dx * dx + dz * dz;
@@ -599,7 +608,7 @@ class Game {
     const finisher = e.health <= Math.max(FINISHER_MIN, maxHp * FINISHER_FRAC);
     const pan = this.enemies.panFor(e.pos);
     e.knockback.addScaledVector(dir, finisher ? 4.5 : 3);
-    e._killedByDash = true;   // suppress the corpse's own death-burst (folded into the pin pop)
+    e._killedByDash = !e.boss;   // suppress the corpse's own burst (folded into the pin) — except bosses, which keep their spectacle
     const killed = e.takeDamage(finisher ? e.health + 1 : DASH_DAMAGE, point, dir, false);
     e._killedByDash = false;
 
