@@ -20,11 +20,11 @@ export const WEAPONS = {
     ads: new THREE.Vector3(-0.02, -0.22, -0.44),
   },
   shotgun: {
-    kind: 'shotgun', name: 'SHOTGUN', auto: false, damage: 13, headMult: 1.6,
-    fireInterval: 0.78, capacity: 40, start: 24, drop: 5, finisher: 8,
-    recoilPitch: 0.065, recoilYaw: 0.028, pellets: 11,
-    spreadBase: 0.062, spreadMove: 0.02, spreadBloom: 0.0, spreadMax: 0.1,
-    range: 44, fovPunch: 5.0, shake: 0.36, tracer: 0xffcf8a, sound: 'shotgun',
+    kind: 'shotgun', name: 'SHOTGUN', auto: true, damage: 15, headMult: 1.7,
+    fireInterval: 0.42, capacity: 56, start: 32, drop: 8, finisher: 10,
+    recoilPitch: 0.05, recoilYaw: 0.024, pellets: 12,
+    spreadBase: 0.05, spreadMove: 0.02, spreadBloom: 0.006, spreadMax: 0.11,
+    range: 58, fovPunch: 4.2, shake: 0.3, tracer: 0xffcf8a, sound: 'shotgun',
     ads: new THREE.Vector3(-0.02, -0.23, -0.46),
   },
 };

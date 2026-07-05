@@ -201,6 +201,27 @@ body { font-family: var(--font); color: #fff; user-select: none; -webkit-user-se
 #grind-ind.show { opacity: 1; transform: translateX(-50%) scale(1); }
 #grind-ind b { font-family: var(--mono); color: #fff; }
 
+/* ---------- slow-mo meter ---------- */
+#slowmo-meter {
+  position: absolute; left: 50%; bottom: 108px; transform: translateX(-50%);
+  width: 132px; height: 7px; border-radius: 4px; overflow: hidden;
+  background: rgba(10, 20, 34, 0.55); box-shadow: inset 0 0 0 1px rgba(120, 200, 255, 0.3);
+  opacity: 0.6; transition: opacity 0.15s, transform 0.15s;
+}
+#slowmo-meter.active { opacity: 1; transform: translateX(-50%) scaleY(1.5); }
+#slowmo-fill {
+  height: 100%; width: 100%;
+  background: linear-gradient(90deg, #4aa8ff, #9fe0ff);
+  box-shadow: 0 0 12px rgba(120, 200, 255, 0.85); transition: width 0.08s linear;
+}
+#slowmo-meter.empty #slowmo-fill { background: rgba(120, 140, 160, 0.4); box-shadow: none; }
+#slowmo-label {
+  position: absolute; left: 50%; top: -16px; transform: translateX(-50%);
+  font-family: var(--mono); font-size: 9px; letter-spacing: 2px; color: rgba(159, 224, 255, 0.7);
+  opacity: 0; transition: opacity 0.15s;
+}
+#slowmo-meter.active #slowmo-label { opacity: 1; }
+
 /* ---------- dash-charge meter ---------- */
 #dash-meter {
   position: absolute; left: 50%; bottom: 92px; transform: translateX(-50%);

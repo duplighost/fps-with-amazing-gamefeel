@@ -19,33 +19,33 @@ const TYPES = {
   husk: {
     hp: 70, speed: 4.0, radius: 0.42, height: 1.9, damage: 12, attackCd: 1.1, score: 100,
     skin: 0x59636f, accent: 0xffab33, blood: 0x6b3b2a, rate: 5.5, reach: 0.9,
-    gait: 'walk', headY: 0.78, build: buildHusk,
+    gait: 'walk', headY: 0.78, voice: 1.0, build: buildHusk,
   },
   stalker: {
     hp: 42, speed: 8.4, radius: 0.36, height: 1.55, damage: 9, attackCd: 0.8, score: 150,
     skin: 0x44552f, accent: 0x74ff2e, blood: 0x3f6a1e, rate: 12, reach: 0.7,
-    gait: 'run', headY: 0.66, weave: 2.0, lunge: true, build: buildStalker,
+    gait: 'run', headY: 0.66, weave: 2.0, lunge: true, voice: 1.7, build: buildStalker,
   },
   juggernaut: {
     hp: 340, speed: 2.4, radius: 0.95, height: 2.85, damage: 34, attackCd: 1.6, score: 350,
     skin: 0x41444f, accent: 0xff3311, blood: 0xff5a22, rate: 3.4, reach: 1.4,
-    gait: 'stomp', headY: 0.82, stomp: true, deathTrauma: 0.28, build: buildJuggernaut,
+    gait: 'stomp', headY: 0.82, stomp: true, deathTrauma: 0.28, voice: 0.55, build: buildJuggernaut,
   },
   wisp: {
     hp: 88, speed: 4.8, radius: 0.44, height: 2.1, damage: 14, attackCd: 1.0, score: 200,
     skin: 0x9fd6e2, accent: 0x33ddff, blood: 0x33ddff, rate: 4, reach: 0.9,
-    gait: 'float', headY: 0.74, hover: 1.15, deathStyle: 'dissolve', build: buildWisp,
+    gait: 'float', headY: 0.74, hover: 1.15, deathStyle: 'dissolve', voice: 1.35, build: buildWisp,
   },
   bloater: {
     hp: 165, speed: 2.7, radius: 0.7, height: 2.2, damage: 20, attackCd: 1.4, score: 250,
     skin: 0x7c7a34, accent: 0xff8a1e, blood: 0x9fb830, rate: 4.5, reach: 1.1,
-    gait: 'waddle', headY: 0.8, burst: true, build: buildBloater,
+    gait: 'waddle', headY: 0.8, burst: true, voice: 0.75, build: buildBloater,
   },
   // --- BOSS: a towering molten titan that slams and calls in reinforcements ---
   colossus: {
     hp: 1600, speed: 2.9, radius: 1.7, height: 5.0, damage: 42, attackCd: 2.4, score: 3000,
     skin: 0x4a3a3e, accent: 0xff4416, blood: 0xff6a22, rate: 2.4, reach: 3.4,
-    gait: 'stomp', headY: 0.9, stomp: true, deathTrauma: 0.7, boss: true, name: 'THE COLOSSUS',
+    gait: 'stomp', headY: 0.9, stomp: true, deathTrauma: 0.7, boss: true, voice: 0.4, name: 'THE COLOSSUS',
     build: buildColossus,
   },
 };
@@ -567,7 +567,7 @@ export class Enemy {
     this.knockback.addScaledVector(dir, kb); this.knockback.y = 0;
     const pan = this.mgr.panFor(this.pos);
     this.mgr.fx.bloodBurst(point, dir, isHead ? 1.6 : 1, this.def.blood);
-    this.mgr.audio.enemyHit(pan);
+    this.mgr.audio.enemyHit(pan, this.def.voice);
     if (this.health <= 0) { this._die(point, dir, isHead); return true; }
     return false;
   }
@@ -587,7 +587,7 @@ export class Enemy {
       this.mgr.fx.addTrauma(0.2);
     }
     this.mgr.fx.addTrauma(this.def.deathTrauma || 0.12);
-    this.mgr.audio.enemyDeath(pan);
+    this.mgr.audio.enemyDeath(pan, this.def.voice);
     this.mgr._onKilled(this, isHead);
   }
 
@@ -634,7 +634,7 @@ export class Enemy {
     if (def.lunge) {
       this.lungeCd -= dt;
       if (this.lunging > 0) { this.lunging -= dt; spd = this.speed * 2.1; }
-      else if (this.lungeCd <= 0 && dist < 16 && dist > def.reach + 1) { this.lunging = 0.5; this.lungeCd = rand(2.5, 4.5); this.mgr.audio.growl(this.mgr.panFor(this.pos)); }
+      else if (this.lungeCd <= 0 && dist < 16 && dist > def.reach + 1) { this.lunging = 0.5; this.lungeCd = rand(2.5, 4.5); this.mgr.audio.growl(this.mgr.panFor(this.pos), this.def.voice); }
     }
 
     if (dist > def.reach + 0.4) desired.addScaledVector(dir, spd);
@@ -662,14 +662,19 @@ export class Enemy {
     // apply visual bob (float/stomp) on top of pos
     this.group.position.set(this.pos.x, this.pos.y + this.bob, this.pos.z);
 
-    if (this.boss) this._bossBehavior(dt, dist, player);
+    // vertical gap: a ground melee can't reach a player who has jumped/flown up.
+    // Reach scales with the creature's size (big things swing higher).
+    const vGap = Math.abs(player.pos.y - this.pos.y);
+    const vReach = def.reach + def.height * 0.65;
+
+    if (this.boss) this._bossBehavior(dt, dist, vGap, player);
     else {
-      // attack on contact
+      // attack on contact (must be within horizontal AND vertical reach)
       this.attackTimer -= dt;
-      if (dist <= def.reach + player.radius + 0.5 && this.attackTimer <= 0) {
+      if (dist <= def.reach + player.radius + 0.5 && vGap <= vReach && this.attackTimer <= 0) {
         this.attackTimer = def.attackCd;
         player.takeDamage((def.damage + this.mgr.wave * 0.5) * this._enrageDmg, this.pos);
-        this.mgr.audio.enemyAttack(this.mgr.panFor(this.pos));
+        this.mgr.audio.enemyAttack(this.mgr.panFor(this.pos), this.def.voice);
         if (this.parts.armL) { this.parts.armL.rotation.x = -2.4; this.parts.armR.rotation.x = -2.4; }
       }
     }
@@ -685,14 +690,14 @@ export class Enemy {
 
     // occasional growl
     this.growlCd -= dt;
-    if (this.growlCd <= 0) { this.growlCd = rand(4, 10); if (dist < 30) this.mgr.audio.growl(this.mgr.panFor(this.pos)); }
+    if (this.growlCd <= 0) { this.growlCd = rand(4, 10); if (dist < 30) this.mgr.audio.growl(this.mgr.panFor(this.pos), this.def.voice); }
 
     this.flash = damp(this.flash, 0, 9, dt);
     this._applyFlash();
   }
 
   // Boss: telegraphed ground-slam AoE + periodic add-spawns.
-  _bossBehavior(dt, dist, player) {
+  _bossBehavior(dt, dist, vGap, player) {
     const def = this.def;
     const p = this.parts;
     if (this._slamT >= 0) {
@@ -713,7 +718,7 @@ export class Enemy {
           this.mgr.fx.addTrauma(0.6);
           this.mgr.audio.bossSlam(this.mgr.panFor(this.pos));
           const slamR = def.reach + 3.5;
-          if (dist < slamR) player.takeDamage(def.damage, this.pos);
+          if (dist < slamR && vGap < def.height * 0.8 + 2) player.takeDamage(def.damage, this.pos);
         }
       } else {
         this._slamT = -1; this._slammed = false;
@@ -721,14 +726,14 @@ export class Enemy {
       }
     } else {
       this.attackTimer -= dt;
-      if (dist <= def.reach + player.radius && this.attackTimer <= 0) { this._slamT = 0; this._slammed = false; }
+      if (dist <= def.reach + player.radius && vGap < def.height && this.attackTimer <= 0) { this._slamT = 0; this._slammed = false; }
     }
     // periodically call in reinforcements
     this._addCd -= dt;
     if (this._addCd <= 0) {
       this._addCd = rand(7, 10);
       if (this.mgr.aliveCount() < 10) this.mgr.spawnAdds(this.pos, 2);
-      this.mgr.audio.growl(this.mgr.panFor(this.pos));
+      this.mgr.audio.growl(this.mgr.panFor(this.pos), this.def.voice);
     }
   }
 

@@ -130,7 +130,10 @@ export function buildFoliage(scene, terrain) {
   // --- grass tufts (alpha-tested crossed blades) ---
   const grass = buildGrass(scene, terrain, rng);
 
-  return { colliders, grass, solids: [treeTrunks, rocks] };
+  return {
+    colliders, grass, solids: [treeTrunks, rocks],
+    mats: { trunk: trunkMat, canopy: canopyMat, rock: rockMat, bush: bushMat, grass: grass.material },
+  };
 }
 
 function grassTexture() {

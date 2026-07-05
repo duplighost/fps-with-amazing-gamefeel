@@ -68,6 +68,7 @@ export class HUD {
       </div>
 
       <div id="combo">x<span id="combo-num">2</span></div>
+      <div id="slowmo-meter"><div id="slowmo-fill"></div><span id="slowmo-label">◷ TIME</span></div>
       <div id="dash-meter"><i></i><i></i></div>
       <div id="banner"><div id="banner-main"></div><div id="banner-sub"></div></div>
       <div id="low-ammo">RELOAD</div>
@@ -97,7 +98,7 @@ export class HUD {
             <div><b>WASD</b> move (always running)</div><div><b>SPACE</b> jump · ✕2 double</div>
             <div><b>SHIFT / F</b> dash · strike</div><div><b>CTRL</b> crouch / slide</div>
             <div><b>L-CLICK</b> fire</div><div><b>R-CLICK</b> aim (iron sights)</div>
-            <div><b>1 / 2 / WHEEL</b> weapons</div><div><b>ESC</b> pause</div>
+            <div><b>Q / MID-MOUSE</b> slow-mo</div><div><b>1 / 2 / WHEEL</b> weapons</div>
             <div class="wide"><b>no reload</b> — dash-strike to finish the weak; grab the ammo &amp; health they drop</div>
           </div>
         </div>
@@ -142,6 +143,8 @@ export class HUD {
       comboNum: q('#combo-num'),
       dashMeter: q('#dash-meter'),
       dashPips: Array.from(document.querySelectorAll('#dash-meter i')),
+      slowmoMeter: q('#slowmo-meter'),
+      slowmoFill: q('#slowmo-fill'),
       bossBar: q('#boss-bar'),
       bossName: q('#boss-name'),
       bossFill: q('#boss-fill'),
@@ -231,6 +234,13 @@ export class HUD {
   dashFx() { this.dashLineT = 1; }
   // white/gold execution pop
   finisherFx() { this.finisherT = 1; }
+
+  // slow-mo meter: fill = charge left; glows while engaged, dims when spent
+  setSlowmo(meter, active) {
+    this.el.slowmoFill.style.width = (clamp01(meter) * 100).toFixed(1) + '%';
+    this.el.slowmoMeter.classList.toggle('active', !!active);
+    this.el.slowmoMeter.classList.toggle('empty', meter <= 0.02);
+  }
 
   // dash-charge meter: filled pips = ready dashes; the next pip shows regen fill
   setDash(charges, maxCharges, recharge, active) {

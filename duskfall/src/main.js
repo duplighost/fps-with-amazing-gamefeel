@@ -3,7 +3,7 @@
 // engine, an animated humanoid horde, and an arcade point/combo system.
 
 import * as THREE from 'three';
-import { clamp, clamp01 } from './engine/math.js';
+import { clamp, clamp01, damp } from './engine/math.js';
 import { Input } from './engine/input.js';
 import { Audio } from './engine/audio.js';
 import { FX } from './engine/fx.js';
@@ -24,6 +24,15 @@ const REGEN_RATE = 7;
 const REGEN_CAP = 32;
 const HIT_INVULN = 0.4;
 const BEST_KEY = 'duskfall.best';
+
+// player-controlled slow-mo (hold Q / middle-mouse), a limited meter
+// seasonal arc: the world eases from summer toward deep haunted winter, reaching
+// full winter (and a snowstorm) around this wave.
+const SEASON_FINAL_WAVE = 12;
+
+const SLOWMO_TARGET = 0.32;   // how slow time runs while engaged
+const SLOWMO_DRAIN = 4.0;     // seconds of use to empty a full meter
+const SLOWMO_REGEN = 8.0;     // seconds to refill from empty
 
 // dash strike + finisher tuning
 const DASH_DAMAGE = 130;
@@ -72,6 +81,8 @@ class Game {
     this.pickups = new PickupManager(this.scene, this.world.terrain);
     this._dashHitSet = new Set();     // enemies struck by the current dash
     this._dashKills = 0; this._dashFinishers = 0;
+    this.slowmoMeter = 1; this._slowmoWasActive = false;
+    this.season = 0;   // 0 = summer … 1 = deep winter, eased toward the wave target
     this.weapons = new Weapons({
       fx: this.fx, audio: this.audio, cam: this.cam, mainCamera: this.camera,
       hitscan: (o, d, r) => this.hitscan(o, d, r),
@@ -218,6 +229,21 @@ class Game {
     hud.touchPause.addEventListener('touchstart', (e) => { e.preventDefault(); if (this.state === 'playing') { this.state = 'paused'; this.hud.showPause(); } }, { passive: false });
   }
 
+  // hold-to-slow-mo, drawing from a regenerating meter (great in the air)
+  _updateSlowmo(dt) {
+    const active = this.input.isDown('slowmo') && this.slowmoMeter > 0.02;
+    if (active) {
+      this.fx.addSlowmo(SLOWMO_TARGET);
+      this.slowmoMeter = Math.max(0, this.slowmoMeter - dt / SLOWMO_DRAIN);
+      if (!this._slowmoWasActive) this.audio.slowmoIn();
+    } else {
+      this.slowmoMeter = Math.min(1, this.slowmoMeter + dt / SLOWMO_REGEN);
+      if (this._slowmoWasActive) this.audio.slowmoOut();
+    }
+    this._slowmoWasActive = active;
+    this.hud.setSlowmo(this.slowmoMeter, active);
+  }
+
   _scorePickup(pos) {
     this.score += 25; this.hud.setScore(this.score);
     this.hud.popText(pos, '+25', this.camera, 'ammo');
@@ -231,12 +257,15 @@ class Game {
     this.enemies.reset();
     this.pickups.reset();
     this.hud.hideBoss();
+    this.slowmoMeter = 1; this._slowmoWasActive = false;
+    this.season = 0; this.world.setSeason(0, 0, 0);   // back to summer
     this._dashHitSet.clear();
     this.fx.trauma = 0; this.fx.hitstop = 0; this.fx.slowmo = 1;
     this.health = MAX_HEALTH; this.invuln = 0; this.lastDamage = this.time;
     this.score = 0; this.combo = 0;
     this.hud.setHealth(this.health, MAX_HEALTH); this.hud.setScore(0); this.hud.combo = 0;
     this.enemies.start();
+    this.audio.startMusic();
     this.runStart = this.time;
     this.state = 'playing';
   }
@@ -308,6 +337,7 @@ class Game {
     this.time += realDt;
     if (this.state === 'playing') {
       this.invuln = Math.max(0, this.invuln - realDt);
+      this._updateSlowmo(realDt);
       const scale = this.fx.consumeTimeScale(realDt);
       const gdt = realDt * scale;
       this.cam.processLook(realDt, this.input);
@@ -325,6 +355,21 @@ class Game {
         if (this.comboTimer > 0) { this.comboTimer -= gdt; if (this.comboTimer <= 0) this.combo = 0; }
       }
       this._dashSweep();
+      // ease the season toward this wave's target so the world changes a little
+      // more each level, drifting from summer into a haunted, snowbound winter
+      const wv = Math.max(0, this.enemies.wave - 1);
+      const seasonTarget = clamp01(wv / (SEASON_FINAL_WAVE - 1));
+      this.season = damp(this.season, seasonTarget, 0.4, realDt);
+      const haunt = clamp01((this.season - 0.15) / 0.85);
+      const storm = clamp01((this.season - 0.8) / 0.2);
+      this.world.setSeason(this.season, haunt, storm);
+
+      // adaptive music: swell with the number of enemies bearing down, a boss, or
+      // low health; cool + muffle the whole score as winter/haunt deepen
+      const combat = clamp01(this.enemies.aliveCount() / 9 + (this.enemies.boss ? 0.4 : 0) + (this.health < 35 ? 0.25 : 0));
+      this.audio.setMusicIntensity(combat);
+      this.audio.setMusicMood(this.season);
+
       // dash i-frames (owned by main): block hits through the dash + recovery
       if (this.controller.dashInvuln) this.invuln = Math.max(this.invuln, 0.05);
       // hold right-click for iron sights (dashing / sliding suppress it)

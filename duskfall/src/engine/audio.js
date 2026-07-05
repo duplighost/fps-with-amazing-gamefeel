@@ -131,19 +131,22 @@ export class Audio {
 
   gunshot(strength = 1) {
     if (!this.ready) return;
-    // punchy rifle: a sharp crack transient, a mid body, and a low boom tail
-    this._noiseBurst({ dur: 0.028, vol: 0.6, type: 'highpass', freq: 3600, sweepTo: 1300 });
-    this._noiseBurst({ dur: 0.11 * strength, vol: 0.5, type: 'bandpass', freq: 1100, q: 0.8, sweepTo: 380 });
-    this._noiseBurst({ dur: 0.24 * strength, vol: 0.42, type: 'lowpass', freq: 420, sweepTo: 85 });
-    this._tone({ freq: 95, freq2: 42, dur: 0.16, vol: 0.34, type: 'sine' });
+    // punchy rifle: a whip-crack transient, a mid body, a boom tail, and a sub thump
+    this._noiseBurst({ dur: 0.02, vol: 0.72, type: 'highpass', freq: 4400, sweepTo: 1500 });
+    this._noiseBurst({ dur: 0.095 * strength, vol: 0.5, type: 'bandpass', freq: 1250, q: 0.7, sweepTo: 360 });
+    this._noiseBurst({ dur: 0.22 * strength, vol: 0.42, type: 'lowpass', freq: 400, sweepTo: 72 });
+    this._tone({ freq: 108, freq2: 40, dur: 0.14, vol: 0.36, type: 'sine' });
+    this._tone({ freq: 58, freq2: 30, dur: 0.1, vol: 0.22, type: 'sine' });   // sub
   }
 
   shotgun() {
     if (!this.ready) return;
-    this._noiseBurst({ dur: 0.03, vol: 0.55, type: 'highpass', freq: 3200, sweepTo: 1000 });
-    this._noiseBurst({ dur: 0.28, vol: 0.6, type: 'lowpass', freq: 900, sweepTo: 110 });
-    this._noiseBurst({ dur: 0.14, vol: 0.4, type: 'bandpass', freq: 1600, q: 0.6, sweepTo: 500 });
-    this._tone({ freq: 78, freq2: 38, dur: 0.24, vol: 0.42, type: 'sine' });
+    // a fat, tight boom that won't mud at the faster fire rate, with a sub kick
+    this._noiseBurst({ dur: 0.024, vol: 0.62, type: 'highpass', freq: 3400, sweepTo: 900 });
+    this._noiseBurst({ dur: 0.2, vol: 0.64, type: 'lowpass', freq: 950, sweepTo: 95 });
+    this._noiseBurst({ dur: 0.1, vol: 0.4, type: 'bandpass', freq: 1550, q: 0.6, sweepTo: 460 });
+    this._tone({ freq: 84, freq2: 34, dur: 0.18, vol: 0.46, type: 'sine' });
+    this._tone({ freq: 50, freq2: 27, dur: 0.12, vol: 0.24, type: 'sine' });   // sub kick
   }
 
   pistol() {
@@ -170,32 +173,32 @@ export class Audio {
   hitmarker() { this._tone({ freq: 1400, freq2: 1700, dur: 0.05, vol: 0.3, type: 'triangle' }); }
   headshot() { this._tone({ freq: 1900, freq2: 2500, dur: 0.07, vol: 0.34, type: 'triangle' }); this._tone({ freq: 950, dur: 0.05, vol: 0.18, type: 'square' }); }
 
-  enemyHit(pan = 0) {
+  // Each enemy type passes a `voice` (a pitch multiplier) so the horde doesn't
+  // sound like one creature. Softer waveforms + wide randomisation keep repeated
+  // hits from getting grating.
+  enemyHit(pan = 0, voice = 1) {
     const dest = this._panned(pan);
-    // wet flesh impact + a pained grunt
-    this._noiseBurst({ dur: 0.06, vol: 0.3, type: 'lowpass', freq: 700, sweepTo: 220, dest });
-    this._tone({ freq: rand(150, 200), freq2: 80, dur: 0.1, vol: 0.22, type: 'sawtooth', dest });
+    this._noiseBurst({ dur: rand(0.04, 0.07), vol: 0.2, type: 'lowpass', freq: rand(560, 820), sweepTo: 190, dest });
+    this._tone({ freq: rand(140, 210) * voice, freq2: 72 * voice, dur: rand(0.06, 0.11), vol: 0.14, type: 'triangle', dest });
   }
 
-  enemyDeath(pan = 0) {
+  enemyDeath(pan = 0, voice = 1) {
     const dest = this._panned(pan);
-    // a guttural descending death groan + a body thud
-    this._tone({ freq: rand(160, 200), freq2: 55, dur: 0.5, vol: 0.34, type: 'sawtooth', dest });
-    this._tone({ freq: rand(90, 120), freq2: 40, dur: 0.55, vol: 0.24, type: 'square', dest });
-    this._noiseBurst({ dur: 0.18, vol: 0.28, type: 'lowpass', freq: 500, sweepTo: 90, dest, delay: 0.22 });
+    this._tone({ freq: rand(150, 210) * voice, freq2: 46 * voice, dur: rand(0.4, 0.6), vol: 0.24, type: 'sawtooth', dest });
+    this._tone({ freq: rand(84, 120) * voice, freq2: 38 * voice, dur: 0.5, vol: 0.14, type: 'triangle', dest });
+    this._noiseBurst({ dur: 0.16, vol: 0.2, type: 'lowpass', freq: 440, sweepTo: 80, dest, delay: rand(0.16, 0.26) });
   }
 
-  enemyAttack(pan = 0) {
+  enemyAttack(pan = 0, voice = 1) {
     const dest = this._panned(pan);
-    // a rising snarl
-    this._tone({ freq: 180, freq2: 340, dur: 0.16, vol: 0.3, type: 'sawtooth', dest });
-    this._noiseBurst({ dur: 0.14, vol: 0.22, type: 'bandpass', freq: 900, q: 1.2, sweepTo: 1600, dest });
+    this._tone({ freq: rand(160, 200) * voice, freq2: rand(300, 360) * voice, dur: rand(0.1, 0.16), vol: 0.2, type: 'triangle', dest });
+    this._noiseBurst({ dur: 0.11, vol: 0.14, type: 'bandpass', freq: 850, q: 0.8, sweepTo: 1500, dest });
   }
 
-  growl(pan = 0) {
+  growl(pan = 0, voice = 1) {
     const dest = this._panned(pan);
-    this._tone({ freq: rand(70, 110), freq2: rand(60, 90), dur: 0.5, vol: 0.12, type: 'sawtooth', dest });
-    this._noiseBurst({ dur: 0.4, vol: 0.06, type: 'lowpass', freq: 400, dest });
+    this._tone({ freq: rand(64, 108) * voice, freq2: rand(52, 84) * voice, dur: rand(0.4, 0.62), vol: 0.1, type: 'sawtooth', dest });
+    this._noiseBurst({ dur: 0.34, vol: 0.045, type: 'lowpass', freq: 360, dest });
   }
 
   enrage(pan = 0) {
@@ -323,6 +326,16 @@ export class Audio {
     this._tone({ freq: 110, freq2: 55, dur: 0.1, vol: 0.12 + intensity * 0.1, type: 'sine' });
   }
 
+  slowmoIn() {
+    // a downward "vwoom" into bullet-time
+    this._tone({ freq: 520, freq2: 130, dur: 0.5, vol: 0.24, type: 'sawtooth' });
+    this._noiseBurst({ dur: 0.4, vol: 0.14, type: 'lowpass', freq: 1800, sweepTo: 300, q: 0.7 });
+  }
+  slowmoOut() {
+    // snap back up to real time
+    this._tone({ freq: 180, freq2: 620, dur: 0.24, vol: 0.2, type: 'sawtooth' });
+    this._noiseBurst({ dur: 0.18, vol: 0.12, type: 'highpass', freq: 500, sweepTo: 2400 });
+  }
   pickup() { this._tone({ freq: 660, freq2: 990, dur: 0.12, vol: 0.3, type: 'triangle' }); this._tone({ freq: 990, freq2: 1320, dur: 0.1, vol: 0.2, type: 'triangle' }); }
   uiClick() { this._tone({ freq: 700, freq2: 900, dur: 0.04, vol: 0.2, type: 'square' }); }
   uiHover() { this._tone({ freq: 500, dur: 0.02, vol: 0.08, type: 'square' }); }
@@ -338,41 +351,72 @@ export class Audio {
     [0, 200, 400, 650].forEach((d, i) => setTimeout(() => this._tone({ freq: 440 / Math.pow(1.2, i), freq2: 200 / Math.pow(1.2, i), dur: 0.5, vol: 0.32, type: 'sawtooth' }), d));
   }
 
-  // ---- ambient music ----------------------------------------------------
-  // A slow, evolving two-oscillator drone with a filtered pulse — keeps energy
-  // up without samples. Faded in/out via musicGain.
+  // ---- adaptive ambient music ------------------------------------------
+  // Three fully-synth layers routed through a mood filter:
+  //   drone   — an evolving minor pad, always present
+  //   tension — a bandpassed shimmer that swells with the action
+  //   pulse   — a low heartbeat throb that deepens + quickens in combat
+  // setMusicIntensity() cross-fades tension/pulse; setMusicMood() closes the
+  // filter to a cold, muffled hush as winter and the haunt set in.
 
   startMusic() {
     if (!this.ready || this._music) return;
     const t = this._now();
     const nodes = [];
-    const baseFreqs = [55, 82.4, 110]; // A1, E2, A2 drone bed
-    baseFreqs.forEach((f, i) => {
+    const mood = this.ctx.createBiquadFilter();
+    mood.type = 'lowpass'; mood.frequency.value = 900; mood.Q.value = 0.6;
+    mood.connect(this.musicGain);
+
+    // --- drone bed (A minor-ish) ---
+    const droneG = this.ctx.createGain(); droneG.gain.value = 1; droneG.connect(mood);
+    [55, 82.4, 110, 130.8].forEach((f, i) => {
       const o = this.ctx.createOscillator();
-      o.type = i === 2 ? 'triangle' : 'sawtooth';
-      o.frequency.value = f;
-      const lfo = this.ctx.createOscillator();
-      lfo.frequency.value = 0.05 + i * 0.03;
-      const lfoGain = this.ctx.createGain();
-      lfoGain.gain.value = f * 0.01;
-      lfo.connect(lfoGain).connect(o.detune);
-      const g = this.ctx.createGain();
-      g.gain.value = 0.12 / (i + 1);
-      const filt = this.ctx.createBiquadFilter();
-      filt.type = 'lowpass';
-      filt.frequency.value = 400 + i * 200;
-      o.connect(filt).connect(g).connect(this.musicGain);
-      o.start(t); lfo.start(t);
+      o.type = i >= 2 ? 'triangle' : 'sawtooth'; o.frequency.value = f;
+      const lfo = this.ctx.createOscillator(); lfo.frequency.value = 0.045 + i * 0.028;
+      const lg = this.ctx.createGain(); lg.gain.value = f * 0.008;
+      lfo.connect(lg).connect(o.detune);
+      const g = this.ctx.createGain(); g.gain.value = 0.11 / (i + 1);
+      o.connect(g).connect(droneG); o.start(t); lfo.start(t);
       nodes.push(o, lfo);
     });
-    this._music = { nodes };
+
+    // --- tension shimmer (swells with intensity) ---
+    const tenG = this.ctx.createGain(); tenG.gain.value = 0.0001; tenG.connect(mood);
+    const to = this.ctx.createOscillator(); to.type = 'sawtooth'; to.frequency.value = 220;
+    const to2 = this.ctx.createOscillator(); to2.type = 'sawtooth'; to2.frequency.value = 329.6; to2.detune.value = 8;
+    const tf = this.ctx.createBiquadFilter(); tf.type = 'bandpass'; tf.frequency.value = 900; tf.Q.value = 2.2;
+    const tlfo = this.ctx.createOscillator(); tlfo.frequency.value = 0.13;
+    const tlg = this.ctx.createGain(); tlg.gain.value = 500; tlfo.connect(tlg).connect(tf.frequency);
+    to.connect(tf); to2.connect(tf); tf.connect(tenG);
+    to.start(t); to2.start(t); tlfo.start(t); nodes.push(to, to2, tlfo);
+
+    // --- combat pulse (heartbeat throb) ---
+    const pulseG = this.ctx.createGain(); pulseG.gain.value = 0.0001; pulseG.connect(mood);
+    const po = this.ctx.createOscillator(); po.type = 'sine'; po.frequency.value = 55;
+    const plfo = this.ctx.createOscillator(); plfo.type = 'sine'; plfo.frequency.value = 1.9;
+    const plg = this.ctx.createGain(); plg.gain.value = 0.16; plfo.connect(plg).connect(pulseG.gain);
+    po.connect(pulseG); po.start(t); plfo.start(t); nodes.push(po, plfo);
+
+    this._music = { nodes, mood, tenG, pulseG, plfo, pulseBase: 0.0001 };
     this.musicGain.gain.cancelScheduledValues(t);
     this.musicGain.gain.setTargetAtTime(0.5, t, 2.5);
   }
 
   setMusicIntensity(x) {
-    if (!this.musicGain) return;
-    this.musicGain.gain.setTargetAtTime(0.3 + clamp(x, 0, 1) * 0.5, this._now(), 1.5);
+    if (!this._music) return;
+    x = clamp(x, 0, 1); const t = this._now();
+    this._music.tenG.gain.setTargetAtTime(0.015 + x * 0.11, t, 1.2);
+    this._music.plfo.frequency.setTargetAtTime(1.5 + x * 2.4, t, 1.5);   // pulse quickens
+    this._music.pulseBase = x * 0.12;                                     // pulse deepens
+    this._music.pulseG.gain.setTargetAtTime(this._music.pulseBase + 0.0001, t, 1.0);
+    this.musicGain.gain.setTargetAtTime(0.34 + x * 0.32, t, 1.5);
+  }
+
+  // season 0..1 → progressively colder, more muffled and dread-laden
+  setMusicMood(season) {
+    if (!this._music) return;
+    const s = clamp(season, 0, 1);
+    this._music.mood.frequency.setTargetAtTime(1000 - s * 560, this._now(), 2.0);
   }
 
   stopMusic() {

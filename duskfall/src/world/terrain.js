@@ -105,6 +105,26 @@ export function buildTerrain(scene) {
   const mat = new THREE.MeshStandardMaterial({
     vertexColors: true, map: grassTexture(), roughness: 0.96, metalness: 0.0,
   });
+  // season blend, on the GPU: warm the ground in autumn, then lay snow on the
+  // up-facing surfaces in winter. vUpFactor is the object-space normal.y, which
+  // equals world-up because the terrain mesh is never rotated.
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uSnow = { value: 0 };
+    shader.uniforms.uAutumn = { value: 0 };
+    shader.vertexShader = 'varying float vUpFactor;\n' + shader.vertexShader.replace(
+      '#include <beginnormal_vertex>',
+      '#include <beginnormal_vertex>\n  vUpFactor = normalize(objectNormal).y;'
+    );
+    shader.fragmentShader = 'uniform float uSnow;\nuniform float uAutumn;\nvarying float vUpFactor;\n' + shader.fragmentShader.replace(
+      '#include <color_fragment>',
+      `#include <color_fragment>
+       diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.35, 0.88, 0.5) + vec3(0.06, 0.015, 0.0), uAutumn);
+       float _snow = smoothstep(0.45, 0.9, vUpFactor) * uSnow;
+       diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.9, 0.93, 1.0), _snow);`
+    );
+    mat._shader = shader;
+  };
+
   const mesh = new THREE.Mesh(geo, mat);
   mesh.receiveShadow = true;
   mesh.castShadow = false;
@@ -116,5 +136,12 @@ export function buildTerrain(scene) {
     normal: terrainNormal,
     playRadius: PLAY_RADIUS,
     size: SIZE,
+    // season 0 = summer, 1 = deep winter
+    setSeason(season) {
+      const s = mat._shader; if (!s) return;
+      const snow = clamp01((season - 0.42) / 0.58);
+      s.uniforms.uSnow.value = snow;
+      s.uniforms.uAutumn.value = clamp01(season * 2.2) * (1 - snow);
+    },
   };
 }

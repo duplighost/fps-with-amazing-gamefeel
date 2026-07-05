@@ -11,7 +11,8 @@ const KEY_MAP = {
   ShiftLeft: 'dash', ShiftRight: 'dash',      // Shift dashes (you always run at speed)
   ControlLeft: 'crouch', ControlRight: 'crouch', KeyC: 'crouch',
   Digit1: 'weapon1', Digit2: 'weapon2', Digit3: 'weapon3',
-  KeyF: 'dash', KeyQ: 'dash', KeyE: 'dash',   // ...also on the WASD-adjacent keys
+  KeyF: 'dash',                               // dash (also on Shift + mouse side buttons)
+  KeyQ: 'slowmo',                             // hold to bend time (also middle-mouse)
 };
 
 export class Input {
@@ -61,11 +62,13 @@ export class Input {
       if (e.button === 0) { if (!this.held.has('fire')) this.pressed.add('fire'); this.held.add('fire'); }
       if (e.button === 2) { if (!this.held.has('aim')) this.pressed.add('aim'); this.held.add('aim'); }
       if (e.button === 3 || e.button === 4) { if (!this.held.has('dash')) this.pressed.add('dash'); this.held.add('dash'); } // mouse side buttons dash
+      if (e.button === 1) { if (!this.held.has('slowmo')) this.pressed.add('slowmo'); this.held.add('slowmo'); e.preventDefault(); } // middle-mouse slow-mo
     };
     this._onMouseUp = (e) => {
       if (e.button === 0) { this.held.delete('fire'); this.released.add('fire'); }
       if (e.button === 2) { this.held.delete('aim'); this.released.add('aim'); }
       if (e.button === 3 || e.button === 4) { this.held.delete('dash'); this.released.add('dash'); }
+      if (e.button === 1) { this.held.delete('slowmo'); this.released.add('slowmo'); }
     };
     this._onWheel = (e) => { if (this.locked) this.wheel += Math.sign(e.deltaY); };
     this._onContext = (e) => e.preventDefault();

@@ -33,9 +33,10 @@ mouse).
 | **WASD** | move — you're **always running** at full speed |
 | **Mouse** | look · **Left click** fire · **Right click** aim (iron sights) |
 | **Space** | jump — press again in the air for a **high double jump** |
-| **Shift / F / Q / E · Mouse4** | **dash** — a fast i-frame lunge; **dash into enemies to strike** |
+| **Shift / F · Mouse4/5** | **dash** — a fast i-frame lunge on regenerating charges; in the air it lifts you, so you can chain jumps + dashes to soar |
+| **Q / middle-mouse** | **slow-mo** — bend time from a regenerating meter (deadly in the air) |
 | **Ctrl / C** | crouch · **run + crouch** = slide |
-| **1 / 2 / wheel** | switch weapons (carbine · shotgun) |
+| **1 / 2 / wheel** | switch weapons (carbine · fast combat shotgun) |
 | **Esc** | pause |
 
 **There is no reload.** DOOM-style: your ammo only comes from what enemies drop and
@@ -67,6 +68,25 @@ a photo. The whole scene is generated at load, then run through a filmic camera:
   the golden hour.
 - **The viewmodel** is drawn in a separate depth-cleared overlay pass so the gun
   never clips into the world — a hallmark of a polished FPS.
+
+## Seasons & dread
+
+The meadow doesn't stay golden. As you climb the waves the world **turns through
+the year and slowly rots** — a little more each level, and it never resets mid-run:
+
+- **Summer → autumn → winter.** The sky thickens and cools, the sun sinks and pales,
+  the fog draws in, and the foliage shifts from summer greens to burnt autumn golds to
+  a bleached winter. Snow creeps down onto every upward-facing surface (a GPU normal
+  mask, so it costs nothing), the grass dies back, and eventually **snow falls** across
+  the whole field, thickening into a **storm** by the final stretch.
+- **The haunting.** Underneath the season, the light curdles — key light dims, the fog
+  turns sickly, exposure drops — so the same meadow that felt warm at wave 1 feels
+  wrong and cold by the end.
+- **Adaptive audio.** There was no music before; now a layered score runs under the
+  whole game — a drone bed, a tension shimmer, and a combat pulse that swells with the
+  danger on screen (enemy count, bosses, low health) and whose **mood darkens with the
+  season**. Enemy voices are pitched per creature type so a crowd sounds like a crowd,
+  and the weapons hit with punchier, layered reports.
 
 ## The feel
 
