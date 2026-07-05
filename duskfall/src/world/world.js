@@ -8,7 +8,9 @@ import { Sky } from 'three/addons/objects/Sky.js';
 import { buildTerrain } from './terrain.js';
 import { buildFoliage } from './foliage.js';
 import { buildPlatforms } from './platforms.js';
-import { rand, lerp, clamp01 } from '../engine/math.js';
+import { buildCave } from './cave.js';
+import { POND, WATER_Y, inPond, ENTRANCES } from './layout.js';
+import { rand, lerp, clamp01, damp } from '../engine/math.js';
 
 const degToRad = THREE.MathUtils.degToRad;
 
@@ -57,14 +59,18 @@ export function buildWorld(scene, renderer) {
   const terrain = buildTerrain(scene);
   const foliage = buildFoliage(scene, terrain);
   const platforms = buildPlatforms(scene, terrain);
+  const cave = buildCave(scene);
+  const pond = buildPond(scene);
   const motes = buildMotes(scene);
   const snow = buildSnow(scene);
+  let underT = 0, pondTime = 0;   // 0 = on the surface … 1 = fully underground
 
   // --- season lerp keyframes: [summer, autumn, winter] ---
   const SUN_W = new THREE.Color(0xffdca8), SUN_C = new THREE.Color(0xcdd9f0);
   const HEMI_SKY_W = new THREE.Color(0xbfd4ff), HEMI_SKY_C = new THREE.Color(0xdde7f2);
   const HEMI_GND_W = new THREE.Color(0x4a5233), HEMI_GND_C = new THREE.Color(0x9aa6b0);
   const FOG_W = new THREE.Color(0xdcc19a), FOG_C = new THREE.Color(0xccd6de), FOG_HAUNT = new THREE.Color(0x6f7883);
+  const _cave = new THREE.Color(0x10141d);
   const FOL = {
     canopy: [0x53702f, 0xc06a1e, 0x9ba2a4], bush: [0x47632a, 0xa85c22, 0x909590],
     trunk: [0x4b3826, 0x4b3826, 0x3b342e], rock: [0x6a655e, 0x6a655e, 0x8f949a], grass: [0x6d8a3a, 0xa08a3a, 0xbcc4c8],
@@ -99,6 +105,16 @@ export function buildWorld(scene, renderer) {
     scene.fog.density = lerp(0.0072, 0.0135, season) + haunt * 0.004 + storm * 0.02;
     // dimmer, colder exposure as winter and the haunt set in
     renderer.toneMappingExposure = lerp(1.15, 1.0, season) - haunt * 0.13;
+    // descend underground: the sky's light dies away and the air goes close + dark
+    if (underT > 0.005) {
+      sun.intensity *= 1 - underT * 0.88;
+      hemi.intensity *= 1 - underT * 0.68;
+      scene.fog.color.lerp(_cave, underT * 0.85);
+      scene.fog.density += underT * 0.03;
+      renderer.toneMappingExposure -= underT * 0.22;
+    }
+    // the pond freezes over in deep winter
+    pond.setFrozen(season >= 0.55);
     // terrain snow / autumn tint (GPU)
     terrain.setSeason(season);
     // foliage colours
@@ -123,23 +139,80 @@ export function buildWorld(scene, renderer) {
   function setStormBoost(v) { stormBoost = clamp01(v); }
   setSeason(0);
 
+  // ONE ground function for everything: surface terrain, cave floor when you're
+  // underground, and the frozen pond's ice sheet on top in winter.
+  function groundAt(x, z, y) {
+    let g = terrain.groundAt(x, z, y);
+    if (pond.frozen && inPond(x, z, 0.6) && y > WATER_Y - 0.35) g = Math.max(g, WATER_Y);
+    return g;
+  }
+  // what you're standing in/on at the pond: 'water' | 'ice' | null
+  function surfaceAt(x, z, footY) {
+    if (!inPond(x, z, 0.2)) return null;
+    if (pond.frozen) return footY > WATER_Y - 0.35 ? 'ice' : 'water';
+    return footY < WATER_Y + 0.3 ? 'water' : null;
+  }
+
   return {
     terrain,
     colliders: foliage.colliders,
     platforms: platforms.platforms,
     nook: platforms.nook,
-    solids: [terrain.mesh, ...foliage.solids, ...platforms.solids],
+    solids: [terrain.mesh, ...foliage.solids, ...platforms.solids, ...cave.solids],
     sun,
     sunDir,
     playRadius: terrain.playRadius,
+    groundAt,
+    surfaceAt,
+    isUnder: terrain.isUnder,
+    ceilAt: terrain.ceilAt,
+    entrances: ENTRANCES,
+    pond,
+    getUnder: () => underT,
     setSeason,
     setStormBoost,
     update(dt, playerPos) {
+      pondTime += dt; pond.update(pondTime);
+      const target = terrain.isUnder(playerPos.x, playerPos.z, playerPos.y + 0.6) ? 1 : 0;
+      underT = damp(underT, target, 3.2, dt);
+      cave.setUnderground(underT);
+      snow.setHidden(underT > 0.5);
       motes.update(dt, playerPos);
       snow.update(dt, playerPos);
       sun.position.copy(sunDir).multiplyScalar(160).add(playerPos);
       sun.target.position.copy(playerPos);
     },
+  };
+}
+
+// The pond: a translucent water disc that hardens into ice in deep winter.
+function buildPond(scene) {
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0x2e6b7a, transparent: true, opacity: 0.72, roughness: 0.18,
+    metalness: 0.05, emissive: 0x0a2830, emissiveIntensity: 0.35,
+  });
+  const mesh = new THREE.Mesh(new THREE.CircleGeometry(POND.r + 0.8, 30), mat);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set(POND.x, WATER_Y, POND.z);
+  scene.add(mesh);
+  let frozen = false;
+  return {
+    mesh,
+    get frozen() { return frozen; },
+    setFrozen(f) {
+      if (f === frozen) return;
+      frozen = f;
+      if (f) {
+        mat.color.setHex(0xd4e6f0); mat.opacity = 0.97; mat.roughness = 0.3;
+        mat.emissive.setHex(0x27394c); mat.emissiveIntensity = 0.22;
+        mesh.position.y = WATER_Y + 0.02;
+      } else {
+        mat.color.setHex(0x2e6b7a); mat.opacity = 0.72; mat.roughness = 0.18;
+        mat.emissive.setHex(0x0a2830); mat.emissiveIntensity = 0.35;
+        mesh.position.y = WATER_Y;
+      }
+    },
+    update(t) { if (!frozen) mat.emissiveIntensity = 0.3 + Math.sin(t * 1.7) * 0.08; },
   };
 }
 
@@ -193,14 +266,15 @@ function buildSnow(scene) {
     color: 0xffffff, size: 0.17, transparent: true, opacity: 0, depthWrite: false, sizeAttenuation: true,
   });
   const points = new THREE.Points(geo, mat); points.frustumCulled = false; points.visible = false; scene.add(points);
-  let intensity = 0, storm = 0, t = 0;
+  let intensity = 0, storm = 0, t = 0, hidden = false;
   return {
     setIntensity(v, st) {
       intensity = clamp01(v); storm = clamp01(st || 0);
       mat.opacity = intensity * (0.55 + storm * 0.4);
       mat.size = 0.16 + storm * 0.12;
-      points.visible = intensity > 0.01;
+      points.visible = !hidden && intensity > 0.01;
     },
+    setHidden(h) { hidden = h; points.visible = !h && intensity > 0.01; },
     update(dt, player) {
       if (intensity <= 0.01) return;
       t += dt;

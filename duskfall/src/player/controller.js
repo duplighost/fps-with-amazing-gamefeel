@@ -25,7 +25,7 @@ const AIR_CAP = 2.2;
 const FRICTION = 10.5;
 const STOP_SPEED = 2.4;
 const JUMP_SPEED = 9.8;
-const DOUBLE_JUMP_SPEED = 14.4;   // a big second launch (takes the max of current vy)
+const DOUBLE_JUMP_SPEED = 19.0;   // a HUGE second launch (takes the max of current vy) — the sky ring is the point
 const MAX_AIR_JUMPS = 1;
 const COYOTE = 0.14;
 const JUMP_BUFFER = 0.16;
@@ -56,6 +56,9 @@ export class Controller {
     this.colliders = colliders;      // [{x,z,r}]
     this.platforms = platforms;      // [{x,z,y,r}] one-way sky-island tops
     this.boundary = boundary;        // max radius from origin
+    // layer hooks (set by main): layer-aware ground, cave ceiling, pond surface
+    this.groundFn = null; this.ceilFn = null; this.isUnderFn = null; this.surfaceProbe = null;
+    this.surface = null;             // 'water' | 'ice' | null — what the feet are in/on
     this.pos = new THREE.Vector3(0, 0, 0);
     this.pos.y = terrain.height(0, 0);
     this.vel = new THREE.Vector3();
@@ -157,6 +160,7 @@ export class Controller {
     const aiming = input.isDown('aim') && !this._sliding && this._dashTimer <= 0;
     let maxSpeed = (this.crouchT > 0.5 && !this._sliding) ? CROUCH_SPEED : RUN_SPEED;
     if (aiming) maxSpeed = Math.min(maxSpeed, ADS_WALK);
+    if (this.surface === 'water') maxSpeed *= 0.78;   // wading is heavy
     this.isCrouching = this.crouchT > 0.5;
     this.isSprinting = this.onGround && (axis.x || axis.z) && !this._sliding && !this.isCrouching && !aiming;
 
@@ -201,8 +205,11 @@ export class Controller {
       this._dashTimer = Math.max(0, this._dashTimer - dt);
       velXZ.copy(this.dashDir).multiplyScalar(this.dashAir ? AIR_DASH_SPEED : DASH_SPEED);
     } else if (this.onGround) {
-      if (!this._jumpedThisFrame) this._friction(velXZ, this._sliding ? SLIDE_FRICTION : FRICTION, dt);
-      if (!this._sliding) this._accel(velXZ, wishDir, maxSpeed, GROUND_ACCEL, dt);
+      // frozen pond: barely any grip — you skate, carrying momentum
+      const onIce = this.surface === 'ice';
+      const fr = onIce ? 1.5 : (this._sliding ? SLIDE_FRICTION : FRICTION);
+      if (!this._jumpedThisFrame) this._friction(velXZ, fr, dt);
+      if (!this._sliding) this._accel(velXZ, wishDir, maxSpeed, GROUND_ACCEL * (onIce ? 0.2 : 1), dt);
       else this._accel(velXZ, wishDir, maxSpeed * 1.1, GROUND_ACCEL * 0.14, dt);
     } else {
       this._airAccel(velXZ, wishDir, maxSpeed, AIR_ACCEL, dt);
@@ -233,6 +240,18 @@ export class Controller {
       this.onGround = false;
     }
 
+    // underground ceiling: keep the head out of the rock. Open shafts (where the
+    // carved surface is BELOW the cave ceiling) skip this so you can jump out.
+    if (this.ceilFn && this.isUnderFn && this.isUnderFn(this.pos.x, this.pos.z, this.pos.y + 0.4)) {
+      const ceil = this.ceilFn(this.pos.x, this.pos.z);
+      if (this.terrain.height(this.pos.x, this.pos.z) > ceil && this.pos.y + this.height > ceil - 0.08) {
+        this.pos.y = ceil - 0.08 - this.height;
+        if (this.vel.y > 0) this.vel.y = 0;
+      }
+    }
+    // what the feet are in/on (pond water, winter ice) — read by feel + sounds
+    this.surface = this.surfaceProbe ? this.surfaceProbe(this.pos.x, this.pos.z, this.pos.y) : null;
+
     // readouts + footsteps
     this.horizSpeed = Math.hypot(this.vel.x, this.vel.z);
     this.speed = this.vel.length();
@@ -248,7 +267,7 @@ export class Controller {
   // the player is horizontally over it AND their feet are at/above that top —
   // giving classic one-way platforms (jump up through, land coming down).
   groundHeight(x, z, footY) {
-    let g = this.terrain.height(x, z);
+    let g = this.groundFn ? this.groundFn(x, z, footY) : this.terrain.height(x, z);
     for (const p of this.platforms) {
       const dx = x - p.x, dz = z - p.z;
       if (dx * dx + dz * dz <= p.r * p.r && p.y > g && footY >= p.y - PLATFORM_GRACE) g = p.y;

@@ -25,6 +25,7 @@ export class PickupManager {
     this.scene = scene;
     this.terrain = terrain;
     this.list = [];
+    this.groundAt = null;    // layer-aware ground fn (set by main); falls back to terrain
     this.nook = null;        // { x, z, y, cageFloorY, cageConfine, catchR, cap }
     this.onCollect = null;   // (type) => {}
     this._assets = buildAssets();
@@ -61,13 +62,15 @@ export class PickupManager {
     const group = proto.clone();
     // clone() shares materials; give each drop its own so fading is independent
     group.traverse((o) => { if (o.material) o.material = o.material.clone(); });
-    const y = this.terrain.height(pos.x, pos.z);
+    const G = this.groundAt || ((x, z, y2) => this.terrain.height(x, z));
+    const y = G(pos.x, pos.z, (pos.y || 0) + 0.6);
     group.position.set(pos.x, y + 0.6, pos.z);
     this.scene.add(group);
     // decide by GEOGRAPHY: a drop inside the nook's catch-column funnels up into
-    // the cage (if there's a free slot); everything else is a normal ground drop.
+    // the cage (if there's a free slot); underground drops never funnel (they'd
+    // thread through solid rock). Everything else is a normal ground drop.
     let rising = false, slot = -1;
-    if (this.nook && this._risingCount() < this.nook.cap) {
+    if (this.nook && y > -6 && this._risingCount() < this.nook.cap) {
       const ddx = pos.x - this.nook.x, ddz = pos.z - this.nook.z;
       if (ddx * ddx + ddz * ddz <= this.nook.catchR * this.nook.catchR) { rising = true; slot = this._lowestFreeSlot(); }
     }
@@ -96,7 +99,8 @@ export class PickupManager {
           g.position.x += (dx / (d || 1)) * pull;
           g.position.z += (dz / (d || 1)) * pull;
         }
-        g.position.y = this.terrain.height(g.position.x, g.position.z) + 0.6 + Math.sin(p.phase) * 0.12;
+        const G = this.groundAt || ((x, z, y2) => this.terrain.height(x, z));
+        g.position.y = G(g.position.x, g.position.z, g.position.y + 0.4) + 0.6 + Math.sin(p.phase) * 0.12;
       }
 
       // unified 3D collect gate (horizontal AND vertical), never while still rising.

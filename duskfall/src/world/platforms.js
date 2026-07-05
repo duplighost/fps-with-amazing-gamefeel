@@ -47,7 +47,8 @@ export function buildPlatforms(scene, terrain) {
   for (const spec of SPECS) {
     const x = Math.cos(spec.a) * spec.d;
     const z = Math.sin(spec.a) * spec.d;
-    const r = spec.r, y = spec.y;
+    // heights are RELATIVE to the local ground now (the terrain has real hills)
+    const r = spec.r, y = spec.y + Math.max(terrain.height(x, z), 0);
     const g = new THREE.Group();
     g.position.set(x, 0, z);
 

@@ -29,6 +29,7 @@ const REFLECT_SPEED = 34;       // reflected snowballs fly back fast + true
 export class ProjectileManager {
   constructor(scene, fx, audio, terrain) {
     this.scene = scene; this.fx = fx; this.audio = audio; this.terrain = terrain;
+    this.groundAt = null;   // layer-aware ground fn (set by main)
     this.list = [];
     this._geo = {
       bolt: new THREE.IcosahedronGeometry(0.32, 0),
@@ -82,7 +83,7 @@ export class ProjectileManager {
       if (p.type === 'grenade') {
         const nearBlow = clamp01(1 - p.life / p.def.life);
         p.mat.emissiveIntensity = 1.2 + nearBlow * 2.4 + Math.sin(p.life * (30 + nearBlow * 130)) * (0.4 + nearBlow * 0.9);
-        const gy = this.terrain.height(p.pos.x, p.pos.z);
+        const gy = this.groundAt ? this.groundAt(p.pos.x, p.pos.z, p.pos.y) : this.terrain.height(p.pos.x, p.pos.z);
         if (p.pos.y <= gy + p.r) {
           p.pos.y = gy + p.r;
           if (p.vel.y < 0) p.vel.y = -p.vel.y * 0.42;   // bounce restitution
@@ -103,8 +104,8 @@ export class ProjectileManager {
         }
       }
 
-      // ground / terrain impact
-      const gy = this.terrain.height(p.pos.x, p.pos.z);
+      // ground / terrain impact (layer-aware: cave floor when underground)
+      const gy = this.groundAt ? this.groundAt(p.pos.x, p.pos.z, p.pos.y) : this.terrain.height(p.pos.x, p.pos.z);
       if (p.pos.y <= gy + p.r * 0.5) {
         this._impact(p, new THREE.Vector3(p.pos.x, gy, p.pos.z), ctx, false);
         this._kill(i); continue;

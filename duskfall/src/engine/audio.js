@@ -316,6 +316,32 @@ export class Audio {
   footstep(speed = 1) {
     this._noiseBurst({ dur: 0.045, vol: 0.1 + 0.06 * speed, type: 'lowpass', freq: rand(380, 520), q: 1 });
   }
+  footstepWater(speed = 1) {
+    // sloshing wade: a wet plop + a bright droplet spray
+    this._noiseBurst({ dur: 0.09, vol: 0.16 + 0.08 * speed, type: 'lowpass', freq: rand(700, 1000), sweepTo: 220, q: 0.8 });
+    this._noiseBurst({ dur: 0.06, vol: 0.09, type: 'highpass', freq: rand(2400, 3400), sweepTo: 1400, delay: 0.02 });
+    this._tone({ freq: rand(190, 260), freq2: 90, dur: 0.06, vol: 0.06, type: 'sine' });
+  }
+  footstepIce(speed = 1) {
+    // hard glassy click with a faint skate hiss
+    this._tone({ freq: rand(900, 1300), freq2: 500, dur: 0.03, vol: 0.1 + 0.05 * speed, type: 'triangle' });
+    this._noiseBurst({ dur: 0.07, vol: 0.06, type: 'highpass', freq: 3200, sweepTo: 1800 });
+  }
+  splash(pan = 0, size = 1) {
+    if (!this._throttle('splash', 0.09)) return;
+    const dest = this._panned(pan);
+    this._noiseBurst({ dur: 0.16 * size, vol: 0.22 * size, type: 'lowpass', freq: 900, sweepTo: 200, q: 0.7, dest });
+    this._noiseBurst({ dur: 0.1, vol: 0.1 * size, type: 'highpass', freq: 2600, sweepTo: 1200, delay: 0.03, dest });
+  }
+  iceCrack() {
+    // the whole pond snapping frozen: sharp cracks over a deep groan
+    [0, 90, 210].forEach((d, i) => setTimeout(() => {
+      this._noiseBurst({ dur: 0.05, vol: 0.4 - i * 0.08, type: 'highpass', freq: 2600 - i * 500, sweepTo: 900 });
+      this._tone({ freq: 1500 - i * 320, freq2: 500, dur: 0.06, vol: 0.22, type: 'triangle' });
+    }, d));
+    this._tone({ freq: 68, freq2: 34, dur: 0.9, vol: 0.34, type: 'sine' });
+    this._noiseBurst({ dur: 0.5, vol: 0.16, type: 'lowpass', freq: 420, sweepTo: 90 });
+  }
 
   jump() { this._tone({ freq: 320, freq2: 480, dur: 0.1, vol: 0.18, type: 'square' }); }
   doubleJump() {

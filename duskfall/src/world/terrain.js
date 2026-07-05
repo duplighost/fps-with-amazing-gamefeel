@@ -4,6 +4,11 @@
 
 import * as THREE from 'three';
 import { lerp, clamp01 } from '../engine/math.js';
+import {
+  POND, WATER_Y, POND_DEPTH, pondDist,
+  ENTRANCES, ENTRANCE_CARVE, TUNNEL_FLOOR, CAVERN_R,
+  caveSDF, caveFloorY, caveCeilY, isUnder,
+} from './layout.js';
 
 const PLAY_RADIUS = 60;   // gentle meadow within this radius
 const SIZE = 340;         // terrain extent (square)
@@ -29,15 +34,45 @@ function fbm(x, z) {
   return f;
 }
 
-// The height field. Rolling hills in the middle, a steep rise past PLAY_RADIUS
-// to fence the arena in naturally.
+// The height field. REAL rolling hills now (two octaves of big shapes), a pond
+// basin, sinkhole craters that funnel down into the underground, a roof clamp
+// over the cavern so the ground never dips through it, and a steep rise past
+// PLAY_RADIUS to fence the arena in naturally.
 export function terrainHeight(x, z) {
-  const rolling = (fbm(x * 0.017 + 11, z * 0.017 + 7) - 0.5) * 8.0;
+  const rolling = (fbm(x * 0.017 + 11, z * 0.017 + 7) - 0.5) * 13.0;
+  const medium = (fbm(x * 0.042 + 31, z * 0.042 + 57) - 0.5) * 4.5;
   const detail = (fbm(x * 0.085, z * 0.085) - 0.5) * 1.1;
-  let h = rolling + detail;
+  let h = rolling + medium + detail + 1.2;
+  // keep enough rock between the surface and the cavern ceiling below it
+  const sdf = caveSDF(x, z);
+  if (sdf < 6) h = Math.max(h, lerp(-4.8, h, clamp01(sdf / 6)));
+  // pond basin: a smooth bowl that holds the water, with a guaranteed shoreline
+  const pd = pondDist(x, z);
+  const pondOuter = POND.r + POND.rimBlend;
+  if (pd < pondOuter) {
+    const k = clamp01((pondOuter - pd) / (pondOuter - POND.r * 0.3));
+    h = lerp(h, WATER_Y - POND_DEPTH, k * k * (3 - 2 * k));
+    if (pd < POND.r * 0.92) h = Math.min(h, lerp(WATER_Y - 0.2, WATER_Y - POND_DEPTH, 1 - pd / POND.r));
+  }
+  // sinkhole craters: the surface funnels down to the tunnel floor
+  for (const e of ENTRANCES) {
+    const ed = Math.hypot(x - e.x, z - e.z);
+    if (ed < ENTRANCE_CARVE) {
+      const k = clamp01((ENTRANCE_CARVE - ed) / (ENTRANCE_CARVE - 1.8));
+      h = lerp(h, TUNNEL_FLOOR, k * k * (3 - 2 * k));
+    }
+  }
   const d = Math.hypot(x, z);
   if (d > PLAY_RADIUS) h += Math.pow((d - PLAY_RADIUS) / 20, 2.2) * 16;
   return h;
+}
+
+// Layer-aware ground: if the point is inside the underground space (and below
+// its ceiling), the floor under it is the cave floor, else the surface terrain.
+// Everything walks/lands/bounces on this one function.
+export function groundAt(x, z, y) {
+  if (isUnder(x, z, y)) return caveFloorY(x, z);
+  return terrainHeight(x, z);
 }
 
 export function terrainNormal(x, z, out = new THREE.Vector3()) {
@@ -77,6 +112,8 @@ const C_GRASS = new THREE.Color(0x5f7a34);
 const C_GRASS_DRY = new THREE.Color(0x8a8a3e);
 const C_DIRT = new THREE.Color(0x6b5433);
 const C_ROCK = new THREE.Color(0x6a6560);
+const C_SAND = new THREE.Color(0x9a8a5c);
+const C_MUD = new THREE.Color(0x4c4430);
 
 export function buildTerrain(scene) {
   const geo = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG);
@@ -97,6 +134,17 @@ export function buildTerrain(scene) {
     if (slope > 0.32) col.lerp(C_DIRT, clamp01((slope - 0.32) / 0.2));
     if (slope > 0.55) col.lerp(C_ROCK, clamp01((slope - 0.55) / 0.25));
     if (h < -2.5) col.lerp(C_DIRT, clamp01((-2.5 - h) / 3) * 0.5); // valleys darker
+    // sandy shore ringing the pond, muddy bed under the water
+    const pd = pondDist(x, z);
+    if (pd < POND.r + 2.5) {
+      col.lerp(C_SAND, clamp01((POND.r + 2.5 - pd) / 3) * 0.8);
+      if (h < WATER_Y) col.lerp(C_MUD, 0.55);
+    }
+    // dark rock down inside the sinkhole craters
+    for (const e of ENTRANCES) {
+      const ed = Math.hypot(x - e.x, z - e.z);
+      if (ed < ENTRANCE_CARVE) col.lerp(C_ROCK, clamp01((ENTRANCE_CARVE - ed) / 4) * 0.75);
+    }
     colors[i * 3] = col.r; colors[i * 3 + 1] = col.g; colors[i * 3 + 2] = col.b;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
@@ -133,6 +181,9 @@ export function buildTerrain(scene) {
   return {
     mesh,
     height: terrainHeight,
+    groundAt,               // layer-aware: (x, z, y) → floor under that point
+    ceilAt: caveCeilY,      // underground ceiling
+    isUnder,                // (x, z, y) → in the underground space?
     normal: terrainNormal,
     playRadius: PLAY_RADIUS,
     size: SIZE,

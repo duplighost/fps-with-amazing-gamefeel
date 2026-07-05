@@ -3,6 +3,7 @@
 // a forest ring at the edge. Trees and big rocks return cylinder colliders.
 
 import * as THREE from 'three';
+import { inPond, ENTRANCES, ENTRANCE_CARVE } from './layout.js';
 import { clamp01 } from '../engine/math.js';
 
 // deterministic RNG so the world is the same every load
@@ -29,6 +30,10 @@ function lumpySphere(radius, detail, jitter, rng) {
   return geo;
 }
 
+// no foliage in the pond or down the sinkhole craters
+const blockedSpot = (x, z) => inPond(x, z, 1.5) ||
+  ENTRANCES.some((e) => Math.hypot(x - e.x, z - e.z) < ENTRANCE_CARVE + 1);
+
 export function buildFoliage(scene, terrain) {
   const rng = mulberry32(1337);
   const colliders = [];      // {x, z, r}
@@ -53,7 +58,7 @@ export function buildFoliage(scene, terrain) {
   for (let i = 0; i < 1600; i++) {
     const x = (rng() * 2 - 1) * HALF, z = (rng() * 2 - 1) * HALF;
     const d = Math.hypot(x, z);
-    if (d < 14) continue;                       // keep spawn clear
+    if (d < 14 || blockedSpot(x, z)) continue;  // keep spawn/pond/sinkholes clear
     N(x, z, nrm);
     if (nrm.y < 0.72) continue;                 // not on steep slopes
     // density: sparse in the middle, dense in the ring 45..95
@@ -85,7 +90,7 @@ export function buildFoliage(scene, terrain) {
   for (let i = 0; i < 400; i++) {
     const x = (rng() * 2 - 1) * HALF, z = (rng() * 2 - 1) * HALF;
     const d = Math.hypot(x, z);
-    if (d < 10) continue;
+    if (d < 10 || blockedSpot(x, z)) continue;
     N(x, z, nrm);
     if (rng() > clamp01((d - 12) / 60) + 0.1) continue;
     rockSpots.push({ x, z, s: 0.4 + rng() * 2.2 });
@@ -110,7 +115,7 @@ export function buildFoliage(scene, terrain) {
   for (let i = 0; i < 600; i++) {
     const x = (rng() * 2 - 1) * HALF, z = (rng() * 2 - 1) * HALF;
     const d = Math.hypot(x, z);
-    if (d < 12) continue;
+    if (d < 12 || blockedSpot(x, z)) continue;
     N(x, z, nrm); if (nrm.y < 0.8) continue;
     if (rng() > clamp01((d - 16) / 50) + 0.05) continue;
     bushSpots.push({ x, z, s: 0.6 + rng() * 1.1 });
@@ -177,7 +182,7 @@ function buildGrass(scene, terrain, rng) {
   for (let i = 0; i < COUNT * 3 && n < COUNT; i++) {
     const x = (rng() * 2 - 1) * 70, z = (rng() * 2 - 1) * 70;
     const d = Math.hypot(x, z);
-    if (d > 72) continue;
+    if (d > 72 || blockedSpot(x, z)) continue;
     const nrm = terrain.normal(x, z);
     if (nrm.y < 0.82) continue;
     const s = 0.6 + rng() * 0.9;

@@ -14,6 +14,7 @@ import * as THREE from 'three';
 import { clamp, clamp01, damp, rand, randInt, pick, lerp } from '../engine/math.js';
 
 const WHITE = new THREE.Color(0xffffff);
+const ICE_TINT = new THREE.Color(0x9fd8ff);   // encased-in-the-frozen-pond tint
 const SEER_CHARGE = 0.8;   // seconds a sniper telegraphs (glowing) before a bolt — long enough to dodge
 const YETI_WINDUP = 0.85;  // yeti snowball wind-up (telegraph) — read it and dash to reflect
 const SNOWBALL_SPEED = 15; // must match projectiles.js snowball def (for lob aiming)
@@ -774,10 +775,13 @@ export class Enemy {
     this.group.userData.hitMeshes = this.hitMeshes;
     for (const m of this.hitMeshes) m.userData.enemy = this;
 
-    this.pos.y = this.mgr.terrain.height(this.pos.x, this.pos.z) + (this.def.hover || 0);
-    // flyers spawn already aloft at their cruise altitude
+    this.pos.y = this.mgr.groundFor(this.pos.x, this.pos.z, this.pos.y) + (this.def.hover || 0);
+    // flyers spawn already aloft at their cruise altitude (surface only)
     if (this.def.flyer) this.pos.y = this.mgr.terrain.height(this.pos.x, this.pos.z) + this.def.cruise;
     this.flyY = this.pos.y;
+    this._inWater = false;         // pond wading (for the splash)
+    this.frozenT = 0;              // encased when the pond froze around it
+    this._ent = new THREE.Vector3();
     this._deathVy = 0;
     this.shootTimer = rand(1.4, this.def.attackCd || 2.5);   // seer bolt cadence
     this._chargeT = -1;                                        // >=0 while telegraphing a shot
@@ -800,6 +804,7 @@ export class Enemy {
 
   takeDamage(dmg, point, dir, isHead) {
     if (!this.alive) return false;
+    if (this.frozenT > 0) dmg *= 1.5;   // encased in ice = brittle
     this.health -= dmg;
     this.flash = 1;
     this.hurtLean = clamp((dir.x * Math.sin(this.facing) + dir.z * Math.cos(this.facing)), -1, 1) * 0.25;
@@ -860,12 +865,18 @@ export class Enemy {
   update(dt, player) {
     if (this._pinned) return;   // main owns the corpse transform while it's skewered on a dash
     if (this.deathT >= 0) { this._updateDeath(dt); return; }
+    if (this.frozenT > 0) { this._frozenTick(dt); return; }
 
     if (this.spawnT < 1) { this.spawnT = clamp01(this.spawnT + dt * 2.4); this.group.scale.setScalar(this.spawnT); }
 
     const def = this.def;
-    const toP = new THREE.Vector3().subVectors(player.pos, this.pos); toP.y = 0;
+    // movement seeks either the player or — when we're on different LAYERS —
+    // the nearest sinkhole entrance (walkers path down/up through it, flyers
+    // loiter over it). Combat always measures the REAL distance to the player.
+    const seek = this._seekPos(player);
+    const toP = new THREE.Vector3(seek.x - this.pos.x, 0, seek.z - this.pos.z);
     const dist = toP.length();
+    const pdist = Math.hypot(player.pos.x - this.pos.x, player.pos.z - this.pos.z);
     const dir = dist > 0.001 ? toP.clone().multiplyScalar(1 / dist) : new THREE.Vector3(0, 0, 1);
 
     // face player
@@ -881,7 +892,7 @@ export class Enemy {
     if (def.lunge) {
       this.lungeCd -= dt;
       if (this.lunging > 0) { this.lunging -= dt; spd = this.speed * 2.1; }
-      else if (this.lungeCd <= 0 && dist < 16 && dist > def.reach + 1) { this.lunging = 0.5; this.lungeCd = rand(2.5, 4.5); this.mgr.audio.growl(this.mgr.panFor(this.pos), this.def.voice); }
+      else if (this.lungeCd <= 0 && pdist < 16 && pdist > def.reach + 1) { this.lunging = 0.5; this.lungeCd = rand(2.5, 4.5); this.mgr.audio.growl(this.mgr.panFor(this.pos), this.def.voice); }
     }
 
     if (def.shooter) {
@@ -922,7 +933,12 @@ export class Enemy {
       this.flyY = damp(this.flyY, ty, def.climb * (this._swoopClimb > 0 ? 1.6 : 1), dt);
       this.pos.y = this.flyY;
     } else {
-      this.pos.y = this.mgr.terrain.height(this.pos.x, this.pos.z) + (def.hover || 0);
+      this.pos.y = this.mgr.groundFor(this.pos.x, this.pos.z, this.pos.y) + (def.hover || 0);
+      // an audible splash when a walker crosses the pond line
+      if (this.mgr.world && this.mgr.world.surfaceAt) {
+        const inW = this.mgr.world.surfaceAt(this.pos.x, this.pos.z, this.pos.y) === 'water';
+        if (inW !== this._inWater) { this._inWater = inW; this.mgr.audio.splash(this.mgr.panFor(this.pos)); }
+      }
     }
 
     this._animate(dt, dist);
@@ -934,12 +950,12 @@ export class Enemy {
     const vGap = Math.abs(player.pos.y - this.pos.y);
     const vReach = def.reach + def.height * 0.65;
 
-    if (this.boss) this._bossBehavior(dt, dist, vGap, player);
-    else if (def.shooter) this._shootBehavior(dt, dist, player);
+    if (this.boss) this._bossBehavior(dt, pdist, vGap, player);
+    else if (def.shooter) this._shootBehavior(dt, pdist, player);
     else {
       // attack on contact (must be within horizontal AND vertical reach)
       this.attackTimer -= dt;
-      if (dist <= def.reach + player.radius + 0.5 && vGap <= vReach && this.attackTimer <= 0) {
+      if (pdist <= def.reach + player.radius + 0.5 && vGap <= vReach && this.attackTimer <= 0) {
         this.attackTimer = def.attackCd;
         player.takeDamage((def.damage + this.mgr.wave * 0.5) * this._enrageDmg, this.pos);
         this.mgr.audio.enemyAttack(this.mgr.panFor(this.pos), this.def.voice);
@@ -959,10 +975,48 @@ export class Enemy {
 
     // occasional growl
     this.growlCd -= dt;
-    if (this.growlCd <= 0) { this.growlCd = rand(4, 10); if (dist < 30) this.mgr.audio.growl(this.mgr.panFor(this.pos), this.def.voice); }
+    if (this.growlCd <= 0) { this.growlCd = rand(4, 10); if (pdist < 30) this.mgr.audio.growl(this.mgr.panFor(this.pos), this.def.voice); }
 
     this.flash = damp(this.flash, 0, 9, dt);
     this._applyFlash();
+  }
+
+  // Where should movement head? The player, unless we're on different layers of
+  // the world — then the nearest sinkhole entrance (the only way up/down).
+  _seekPos(player) {
+    const w = this.mgr.world;
+    if (!w || !w.isUnder || !w.entrances) return player.pos;
+    const pUnder = this.mgr.playerUnder;
+    const meUnder = w.isUnder(this.pos.x, this.pos.z, this.pos.y + 0.5);
+    this.underground = meUnder;
+    if (this.def.flyer) return pUnder ? this._nearestEntrance(player) : player.pos;
+    if (pUnder === meUnder) return player.pos;
+    return this._nearestEntrance(player);
+  }
+  _nearestEntrance(player) {
+    const w = this.mgr.world;
+    let best = w.entrances[0], bd = Infinity;
+    for (const e of w.entrances) {
+      const d = Math.hypot(e.x - player.pos.x, e.z - player.pos.z);
+      if (d < bd) { bd = d; best = e; }
+    }
+    this._ent.set(best.x, 0, best.z);
+    return this._ent;
+  }
+
+  // Encased in the pond's ice: held solid, tinted frost, brittle to damage.
+  _frozenTick(dt) {
+    this.frozenT -= dt;
+    for (let i = 0; i < this.skinMats.length; i++) this.skinMats[i].color.copy(this._baseColors[i]).lerp(ICE_TINT, 0.72);
+    if (this.frozenT <= 0) {
+      for (let i = 0; i < this.skinMats.length; i++) this.skinMats[i].color.copy(this._baseColors[i]);
+      // thaw out and clamber up onto the ice sheet
+      this.pos.y = this.mgr.groundFor(this.pos.x, this.pos.z, 0.5) + (this.def.hover || 0);
+    }
+  }
+  freezeSolid(t) {
+    this.frozenT = t;
+    this.attackTimer = Math.max(this.attackTimer, 1);
   }
 
   // Boss dispatch: the yeti fights differently (ranged snowball-thrower).
@@ -1013,6 +1067,7 @@ export class Enemy {
   _yetiBehavior(dt, dist, vGap, player) {
     const def = this.def;
     const p = this.parts;
+    if (this.mgr.playerUnder) { this._chargeT = -1; this._slamT = -1; return; }   // it prowls the entrances instead
 
     // reeling from a reflected snowball — drop everything and stagger
     if (this._stagger > 0) {
@@ -1111,6 +1166,7 @@ export class Enemy {
   _shootBehavior(dt, dist, player) {
     const def = this.def;
     if (!this.mgr.projectiles) return;
+    if (this.mgr.playerUnder) { this._chargeT = -1; return; }   // no sniping through rock
     if (this._chargeT >= 0) {
       this._chargeT += dt;
       const k = clamp01(this._chargeT / SEER_CHARGE);
@@ -1229,7 +1285,7 @@ export class Enemy {
       this.group.rotation.y += dt * 3;
       this.group.scale.setScalar(this.spawnT * (1 - k * 0.4));
       fade = 1 - k;
-      this.pos.y = this.mgr.terrain.height(this.pos.x, this.pos.z) + (def.hover || 0) + k * 0.6;
+      this.pos.y = this.mgr.groundFor(this.pos.x, this.pos.z, this.pos.y) + (def.hover || 0) + k * 0.6;
       this.group.position.set(this.pos.x, this.pos.y, this.pos.z);
       this._setOpacity(fade);
       this.flash = damp(this.flash, 0, 9, dt); this._applyFlash();
@@ -1240,7 +1296,7 @@ export class Enemy {
     // default: crumple to the ground, then sink + fade
     const fallAmt = clamp01(t / 0.5);
     this.group.rotation.x = lerp(0, Math.PI * 0.5, easeOut(fallAmt));
-    const gy = this.mgr.terrain.height(this.pos.x, this.pos.z);
+    const gy = this.mgr.groundFor(this.pos.x, this.pos.z, this.pos.y);
     if (def.flyer && this.pos.y > gy + 0.1) {
       // shot out of the sky: tumble and plummet until it hits the ground
       this._deathVy -= 30 * dt;
@@ -1292,6 +1348,8 @@ function dampAngle(a, b, l, dt) {
 export class EnemyManager {
   constructor(scene, fx, audio, world, player) {
     this.scene = scene; this.fx = fx; this.audio = audio;
+    this.world = world;              // layer-aware ground/entrances/pond
+    this.playerUnder = false;        // recomputed each update
     this.terrain = world.terrain;
     this.colliders = world.colliders;
     this.boundary = world.playRadius;
@@ -1396,14 +1454,28 @@ export class EnemyManager {
     let z = this.player.pos.z + Math.sin(a) * r;
     const dr = Math.hypot(x, z);
     if (dr > this.boundary - 2) { const k = (this.boundary - 2) / dr; x *= k; z *= k; }
-    const pos = new THREE.Vector3(x, this.terrain.height(x, z), z);
+    let y = this.terrain.height(x, z);
+    // if the player is holed up underground, most walkers spawn down in the
+    // tunnels at a sinkhole instead of uselessly pacing the surface
+    if (this.playerUnder && !TYPES[item.t].flyer && !item.boss && this.world.entrances && Math.random() < 0.65) {
+      const e = pick(this.world.entrances);
+      x = e.x + rand(-2.5, 2.5); z = e.z + rand(-2.5, 2.5);
+      y = -13;
+    }
+    const pos = new THREE.Vector3(x, y, z);
     const e = new Enemy(this, item.t, pos, item.hpScale, item.speedScale);
     this.enemies.push(e);
     if (item.boss) { this.boss = e; if (this.onBoss) this.onBoss('spawn', e); }
     if (this.onCountChange) this.onCountChange(this.aliveCount());
   }
 
+  groundFor(x, z, y) {
+    return this.world && this.world.groundAt ? this.world.groundAt(x, z, y) : this.terrain.height(x, z);
+  }
+
   update(dt) {
+    this.playerUnder = this.world && this.world.isUnder
+      ? this.world.isUnder(this.player.pos.x, this.player.pos.z, this.player.pos.y + 0.5) : false;
     if (this.active) {
       if (this.spawnQueue.length === 0 && this.aliveCount() === 0 && this.betweenWaves <= 0) {
         if (this.wave > 0 && this.onWaveCleared) this.onWaveCleared(this.wave);
@@ -1485,7 +1557,7 @@ export class EnemyManager {
   _onKilled(e, isHead) {
     this.kills++;
     // a flyer dies in the air — pop the feedback at its actual altitude, not the ground
-    const fy = e.def.flyer ? e.pos.y : this.terrain.height(e.pos.x, e.pos.z) + e.def.height * 0.6;
+    const fy = e.def.flyer ? e.pos.y : this.groundFor(e.pos.x, e.pos.z, e.pos.y) + e.def.height * 0.6;
     const pos = new THREE.Vector3(e.pos.x, fy, e.pos.z);
     if (e.boss) { const b = this.boss; this.boss = null; if (this.onBoss) this.onBoss('dead', b || e); }
     if (this.onKill) this.onKill(e, isHead, pos);

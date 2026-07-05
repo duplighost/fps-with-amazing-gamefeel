@@ -97,6 +97,14 @@ class Game {
     this.pickups.setNook(this.world.nook);
     this.projectiles = new ProjectileManager(this.scene, this.fx, this.audio, this.world.terrain);
     this.enemies.projectiles = this.projectiles;
+    // one layer-aware ground for every system (surface / cave floor / pond ice)
+    this.controller.groundFn = this.world.groundAt;
+    this.controller.ceilFn = this.world.ceilAt;
+    this.controller.isUnderFn = this.world.isUnder;
+    this.controller.surfaceProbe = this.world.surfaceAt;
+    this.pickups.groundAt = this.world.groundAt;
+    this.projectiles.groundAt = this.world.groundAt;
+    this._pondWasFrozen = false;
     this._dashHitSet = new Set();     // enemies struck by the current dash
     this._dashKills = 0; this._dashFinishers = 0;
     this._dashPin = null;             // { e, t } — a killed corpse skewered in front
@@ -300,6 +308,7 @@ class Game {
     this.dropMods = { ammo: 1, health: 1, grenade: 1 };
     this.hud.setGrenades(this.grenades, this.maxGrenades);
     this.season = 0; this._stormBoost = 0; this.world.setSeason(0, 0, 0);   // back to summer
+    this._pondWasFrozen = this.world.pond.frozen;
     this._dashHitSet.clear(); this._dashPin = null; this._dashAge = 0;
     this.fx.trauma = 0; this.fx.hitstop = 0; this.fx.slowmo = 1;
     this.maxHealth = MAX_HEALTH; this.slowmoCap = 1; this.upgradeStacks = {};
@@ -414,11 +423,16 @@ class Game {
       this.world.setStormBoost(this._stormBoost);
       this.world.setSeason(this.season, haunt, Math.max(storm, this._stormBoost));
 
+      // the moment the pond freezes over: a set-piece (encase whatever's wading)
+      const frozenNow = this.world.pond.frozen;
+      if (frozenNow && !this._pondWasFrozen) this._onPondFreeze();
+      this._pondWasFrozen = frozenNow;
+
       // adaptive music: swell with the number of enemies bearing down, a boss, or
-      // low health; cool + muffle the whole score as winter/haunt deepen
+      // low health; cool + muffle the score as winter/haunt deepen or you descend
       const combat = clamp01(this.enemies.aliveCount() / 9 + (this.enemies.boss ? 0.4 : 0) + (this.health < 35 ? 0.25 : 0));
       this.audio.setMusicIntensity(combat);
-      this.audio.setMusicMood(this.season);
+      this.audio.setMusicMood(Math.min(1, this.season + this.world.getUnder() * 0.55));
 
       // dash i-frames (owned by main): block hits through the dash + recovery
       if (this.controller.dashInvuln) this.invuln = Math.max(this.invuln, 0.05);
@@ -446,7 +460,15 @@ class Game {
     const ev = this.controller.events;
     if (ev.jumped) this.audio.jump();
     if (ev.landed > 0) this.audio.land(ev.landed);
-    if (ev.stepped) this.audio.footstep(this.controller.isSprinting ? 1 : 0.5);
+    if (ev.stepped) {
+      const spd = this.controller.isSprinting ? 1 : 0.5;
+      if (this.controller.surface === 'water') {
+        this.audio.footstepWater(spd);
+        const p = this.controller.pos;
+        this.fx.shockwave(new THREE.Vector3(p.x, p.y + 0.06, p.z), 0x7fc4d8, 1.1, 0.35);
+      } else if (this.controller.surface === 'ice') this.audio.footstepIce(spd);
+      else this.audio.footstep(spd);
+    }
     if (ev.slid) this.audio.slide();
     if (ev.mantled) {
       this.audio.mantle();
@@ -516,6 +538,30 @@ class Game {
       // if the browser rejects the re-lock, fall back to the pause menu (click to
       // resume re-requests it) rather than stranding the run playing-but-unlocked
       if (pr && pr.catch) pr.catch(() => { if (this.state === 'playing') { this.state = 'paused'; this.hud.showPause(); } });
+    }
+  }
+
+  // The pond snaps frozen: everything wading is encased in the ice; a wading
+  // player gets popped up onto the fresh sheet with a slip.
+  _onPondFreeze() {
+    this.audio.iceCrack();
+    this.hud.banner('THE POND FREEZES', 'whatever was in it is not going anywhere', '#bfe4ff');
+    this.fx.addTrauma(0.3);
+    for (const e of this.enemies.enemies) {
+      if (!e.alive || e.def.flyer || e.boss) continue;
+      if (this.world.surfaceAt(e.pos.x, e.pos.z, e.pos.y - 0.2) === 'water' ||
+          this.world.surfaceAt(e.pos.x, e.pos.z, e.pos.y) === 'water') {
+        e.freezeSolid(4.5);
+        this.fx.shockwave(new THREE.Vector3(e.pos.x, e.pos.y + 1, e.pos.z), 0xbfe4ff, 2.2, 0.4);
+      }
+    }
+    const c = this.controller;
+    if (c.surface === 'water') {
+      // the sheet forms under your boots and shoves you up onto it
+      c.pos.y = this.world.groundAt(c.pos.x, c.pos.z, 0.5) + 0.02;
+      c.vel.y = Math.max(c.vel.y, 3);
+      this.cam.addFovPunch(4);
+      this.fx.addTrauma(0.25);
     }
   }
 
