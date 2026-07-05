@@ -262,8 +262,10 @@ export class Controller {
       const velInto = this.vel.x * inX + this.vel.z * inZ;
       const wishInto = wishDir.x * inX + wishDir.z * inZ;
       if (velInto < -1.5 || wishInto < -0.4) continue;
-      // pop up just over the lip, carry inward, keep the horizontal pace
-      this.vel.y = Math.sqrt(2 * GRAVITY * (below + 0.65));
+      // pop up just over the lip, carry inward, keep the horizontal pace.
+      // Math.max so a mantle never ROBS an already-faster ascent (same invariant
+      // the double-jump + dash preserve) — brushing a ledge mid-soar only helps.
+      this.vel.y = Math.max(this.vel.y, Math.sqrt(2 * GRAVITY * (below + 0.65)));
       this.vel.x += inX * 5.5; this.vel.z += inZ * 5.5;
       this._jumpCutGrace = 0.3;      // protect the vault from the variable-jump cut
       this._mantleCd = MANTLE_COOLDOWN;

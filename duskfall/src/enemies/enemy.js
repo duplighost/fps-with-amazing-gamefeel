@@ -485,7 +485,7 @@ function buildRaven(def) {
   const tail = new THREE.Mesh(new THREE.ConeGeometry(0.12 * s, 0.55 * s, 4), skin);
   tail.scale.set(1, 0.35, 1); tail.rotation.x = Math.PI / 2; tail.position.z = -0.5 * s; pelvis.add(tail);
 
-  return { root, parts, hitMeshes, skinMats: [skin], materials };
+  return { root, parts, hitMeshes, skinMats: [skin], materials, headHitY: 0.12 * s };
 }
 
 // A hovering caster/sniper: a robed floating body with a bright charged eye and a
@@ -524,7 +524,7 @@ function buildSeer(def) {
   pelvis.add(armL.group, armR.group); parts.armL = armL.group; parts.armR = armR.group;
   hitMeshes.push(armL.mesh, armR.mesh);
 
-  return { root, parts, hitMeshes, skinMats: [], materials, softFade: [robe], muzzleY: 0.65 * s, muzzleZ: 0.3 * s };
+  return { root, parts, hitMeshes, skinMats: [], materials, softFade: [robe], muzzleY: 0.65 * s, muzzleZ: 0.3 * s, headHitY: 0.3 * s };
 }
 
 function buildColossus(def) {
@@ -783,12 +783,17 @@ export class Enemy {
     // seer's world-space muzzle offset (from its build)
     this._muzzleY = built.muzzleY || this.def.height * 0.6;
     this._muzzleZ = built.muzzleZ || 0;
+    // for flyers (body-centred), the local Y above which a hit counts as a headshot
+    this._headHitY = built.headHitY || 0;
     this.group.position.copy(this.pos);
     this.group.scale.setScalar(0.01);
     mgr.scene.add(this.group);
   }
 
   isHeadshot(point) {
+    // grounded models put the origin at the feet (headY is a fraction of height);
+    // flyer models are body-centred, so their head sits just above the origin.
+    if (this.def.flyer) return point.y > this.pos.y + this._headHitY;
     return point.y > this.pos.y + this.def.height * (this.def.headY || 0.78);
   }
 
@@ -812,7 +817,10 @@ export class Enemy {
     this.knockback.addScaledVector(dir, this.def.gait === 'stomp' ? 0.8 : 2.5);
     this._fallDir = Math.atan2(dir.x, dir.z);
     const pan = this.mgr.panFor(this.pos);
-    const center = this.group.position.clone().setY(this.pos.y + this.def.height * (isHead ? 0.85 : 0.5));
+    // flyer models are body-centred (origin at the torso), so the burst sits at
+    // pos.y; grounded models are feet-origin and need the head/chest offset
+    const centerOff = this.def.flyer ? 0 : this.def.height * (isHead ? 0.85 : 0.5);
+    const center = this.group.position.clone().setY(this.pos.y + centerOff);
     this.mgr.fx.deathBurst(center, this.def.blood);
     if (this.def.burst) {
       // rupture: a second, larger gas-and-gore burst
@@ -1467,7 +1475,9 @@ export class EnemyManager {
 
   _onKilled(e, isHead) {
     this.kills++;
-    const pos = new THREE.Vector3(e.pos.x, this.terrain.height(e.pos.x, e.pos.z) + e.def.height * 0.6, e.pos.z);
+    // a flyer dies in the air — pop the feedback at its actual altitude, not the ground
+    const fy = e.def.flyer ? e.pos.y : this.terrain.height(e.pos.x, e.pos.z) + e.def.height * 0.6;
+    const pos = new THREE.Vector3(e.pos.x, fy, e.pos.z);
     if (e.boss) { const b = this.boss; this.boss = null; if (this.onBoss) this.onBoss('dead', b || e); }
     if (this.onKill) this.onKill(e, isHead, pos);
     if (this.onCountChange) this.onCountChange(this.aliveCount());
