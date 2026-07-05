@@ -20,6 +20,9 @@ const SPECS = [
   { a: 3.95, d: 22, y: 18.5, r: 3.9 },
   { a: 4.75, d: 34, y: 13.5, r: 4.7 },
   { a: 5.55, d: 17, y: 20.5, r: 3.4 },
+  // the NOOK: the lowest + smallest island (easy first hop, exposed shooting
+  // perch) with a central loot-cage that funneled pickups rise into
+  { a: 5.0, d: 13, y: 6.5, r: 3.0, nook: true },
 ];
 
 // season colour triples [summer, autumn, winter]
@@ -39,6 +42,7 @@ export function buildPlatforms(scene, terrain) {
 
   const solids = [];
   const colliders = [];   // {x,z,y,r} circular one-way tops for the controller
+  let nookDesc = null;    // the loot-cage descriptor (set when the nook is built)
 
   for (const spec of SPECS) {
     const x = Math.cos(spec.a) * spec.d;
@@ -94,6 +98,24 @@ export function buildPlatforms(scene, terrain) {
       boul.castShadow = true; g.add(boul);
     }
 
+    // the nook's central loot-cage: purely decorative (never in solids/colliders,
+    // so you can shoot down through it), made of the glowing crystal so it blooms
+    // and season-tints for free. Funneled pickups rise up inside and stack.
+    if (spec.nook) {
+      const cageR = 0.9, cageH = 2.0;
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, cageH, 5), crystalMat);
+        bar.position.set(Math.cos(a) * cageR, y + 1.0 + 0.05, Math.sin(a) * cageR);
+        g.add(bar);
+      }
+      const baseRing = new THREE.Mesh(new THREE.TorusGeometry(cageR, 0.05, 6, 16), crystalMat);
+      baseRing.rotation.x = Math.PI / 2; baseRing.position.y = y + 0.08; g.add(baseRing);
+      const topRing = new THREE.Mesh(new THREE.TorusGeometry(cageR, 0.05, 6, 16), crystalMat);
+      topRing.rotation.x = Math.PI / 2; topRing.position.y = y + 2.05; g.add(topRing);
+      nookDesc = { x, z, y, cageFloorY: y + 0.4, cageConfine: 0.75, catchR: 6.0, cap: 5 };
+    }
+
     scene.add(g);
     colliders.push({ x, z, y, r: r * 0.98 });
   }
@@ -101,6 +123,7 @@ export function buildPlatforms(scene, terrain) {
   return {
     solids,
     platforms: colliders,             // consumed by the controller for landing
+    nook: nookDesc,                   // the loot-cage funnel descriptor (or null)
     mats: { grass: grassMat, earth: earthMat, crystal: crystalMat },
     setSeason(season) {
       seasonCol(grassMat.color, GRASS, season);

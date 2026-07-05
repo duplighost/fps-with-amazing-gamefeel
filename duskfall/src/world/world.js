@@ -127,6 +127,7 @@ export function buildWorld(scene, renderer) {
     terrain,
     colliders: foliage.colliders,
     platforms: platforms.platforms,
+    nook: platforms.nook,
     solids: [terrain.mesh, ...foliage.solids, ...platforms.solids],
     sun,
     sunDir,

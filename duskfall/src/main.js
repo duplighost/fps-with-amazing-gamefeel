@@ -94,6 +94,7 @@ class Game {
 
     this.enemies = new EnemyManager(this.scene, this.fx, this.audio, this.world, this.player);
     this.pickups = new PickupManager(this.scene, this.world.terrain);
+    this.pickups.setNook(this.world.nook);
     this.projectiles = new ProjectileManager(this.scene, this.fx, this.audio, this.world.terrain);
     this.enemies.projectiles = this.projectiles;
     this._dashHitSet = new Set();     // enemies struck by the current dash
