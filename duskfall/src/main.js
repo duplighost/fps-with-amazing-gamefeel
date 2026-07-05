@@ -228,7 +228,10 @@ class Game {
         if (this.state === 'menu' || this.state === 'dead') this.startRun();
         else if (this.state === 'paused') this.state = 'playing';
         this.hud.hideOverlay();
-      } else if (this.state === 'playing') { this.state = 'paused'; this.hud.showPause(); }
+      } else if (this.state === 'playing') {
+        if (this._dashPin) this._detonatePin();   // don't freeze a skewered corpse through the pause
+        this.state = 'paused'; this.hud.showPause();
+      }
     };
 
     this.hud.el.playBtn.addEventListener('click', (e) => {

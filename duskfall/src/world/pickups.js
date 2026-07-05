@@ -134,7 +134,11 @@ export class PickupManager {
     g.position.x = damp(g.position.x, nk.x, GATHER_LAMBDA, dt);
     g.position.z = damp(g.position.z, nk.z, GATHER_LAMBDA, dt);
     const ox = g.position.x - nk.x, oz = g.position.z - nk.z, or = Math.hypot(ox, oz);
-    if (or > nk.cageConfine) { g.position.x = nk.x + ox / or * nk.cageConfine; g.position.z = nk.z + oz / or * nk.cageConfine; }
+    // keep RISEN/caged loot inside the bars, but don't hard-snap a still-gathering
+    // drop — let GATHER_LAMBDA slide it smoothly to the axis first
+    if ((p.caged || g.position.y > nk.y) && or > nk.cageConfine) {
+      g.position.x = nk.x + ox / or * nk.cageConfine; g.position.z = nk.z + oz / or * nk.cageConfine;
+    }
     // rise only once it has reached the axis (so it threads up, not through the rim)
     if (or < 0.6 || p.caged || g.position.y > nk.y) {
       const ty = nk.cageFloorY + p.slot * STACK_GAP;
