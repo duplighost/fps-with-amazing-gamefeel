@@ -68,7 +68,10 @@ class Game {
     this.controller = new Controller(this.world.terrain, this.world.colliders, this.world.playRadius + 4, this.world.platforms);
     this.cam = new CameraRig(this.camera);
 
-    this.health = MAX_HEALTH;
+    this.maxHealth = MAX_HEALTH;   // raised by upgrades
+    this.slowmoCap = 1;            // slow-mo duration multiplier, raised by upgrades
+    this.upgradeStacks = {};       // upgrade id -> times taken (for display)
+    this.health = this.maxHealth;
     this.invuln = 0;
     this.lastDamage = -999;
     this.score = 0;
@@ -110,7 +113,7 @@ class Game {
     this.best = this._loadBest();
 
     this._wire();
-    this.hud.setHealth(this.health, MAX_HEALTH);
+    this.hud.setHealth(this.health, this.maxHealth);
     this.hud.showStart();
     this.hud.setBest(this.best);
     if (this.input.isTouch) this.hud.enableTouchUI();
@@ -159,9 +162,9 @@ class Game {
           this.audio.pickup();
         } else { this._scorePickup(pos); }
       } else {
-        if (this.health < MAX_HEALTH) {
-          this.health = Math.min(MAX_HEALTH, this.health + DROP_HEALTH);
-          this.hud.setHealth(this.health, MAX_HEALTH);
+        if (this.health < this.maxHealth) {
+          this.health = Math.min(this.maxHealth, this.health + DROP_HEALTH);
+          this.hud.setHealth(this.health, this.maxHealth);
           this.hud.popText(pos, '+' + DROP_HEALTH + ' HP', this.camera, 'score');
           this.audio.pickup();
         } else { this._scorePickup(pos); }
@@ -176,7 +179,7 @@ class Game {
     this.enemies.onWaveCleared = (n) => {
       const bonus = n * 100;
       this.score += bonus; this.hud.setScore(this.score);
-      this.hud.banner('WAVE ' + n + ' CLEARED', '+' + bonus + ' bonus', '#b6f36a');
+      this._offerUpgrade(n);
     };
     this.enemies.onBoss = (event, boss) => {
       if (event === 'spawn') {
@@ -253,7 +256,7 @@ class Game {
     const active = this.input.isDown('slowmo') && this.slowmoMeter > 0.02;
     if (active) {
       this.fx.addSlowmo(SLOWMO_TARGET);
-      this.slowmoMeter = Math.max(0, this.slowmoMeter - dt / SLOWMO_DRAIN);
+      this.slowmoMeter = Math.max(0, this.slowmoMeter - dt / (SLOWMO_DRAIN * this.slowmoCap));
       if (!this._slowmoWasActive) this.audio.slowmoIn();
     } else {
       this.slowmoMeter = Math.min(1, this.slowmoMeter + dt / SLOWMO_REGEN);
@@ -285,9 +288,11 @@ class Game {
     this.season = 0; this._stormBoost = 0; this.world.setSeason(0, 0, 0);   // back to summer
     this._dashHitSet.clear();
     this.fx.trauma = 0; this.fx.hitstop = 0; this.fx.slowmo = 1;
-    this.health = MAX_HEALTH; this.invuln = 0; this.lastDamage = this.time;
+    this.maxHealth = MAX_HEALTH; this.slowmoCap = 1; this.upgradeStacks = {};
+    this.health = this.maxHealth; this.invuln = 0; this.lastDamage = this.time;
+    this.weapons.setCapacityMult(1);
     this.score = 0; this.combo = 0;
-    this.hud.setHealth(this.health, MAX_HEALTH); this.hud.setScore(0); this.hud.combo = 0;
+    this.hud.setHealth(this.health, this.maxHealth); this.hud.setScore(0); this.hud.combo = 0;
     this.enemies.start();
     this.audio.startMusic();
     this.runStart = this.time;
@@ -298,7 +303,7 @@ class Game {
     if (this.state !== 'playing' || this.invuln > 0 || this.controller.dashInvuln) return;
     this.health -= amount; this.invuln = HIT_INVULN; this.lastDamage = this.time;
     this.combo = 0; this.hud.breakCombo(); // getting hit breaks your combo (score + meter)
-    this.hud.setHealth(Math.max(0, this.health), MAX_HEALTH);
+    this.hud.setHealth(Math.max(0, this.health), this.maxHealth);
     this.hud.damageFlash(clamp01(amount / 28), sourcePos, this.camera);
     this.audio.playerHurt();
     this.fx.addTrauma(clamp(amount / 22, 0.22, 0.7));
@@ -453,6 +458,44 @@ class Game {
     }
   }
 
+  // After each wave, offer a choice of 3 stacking upgrades. Odd waves give the
+  // "capacity" set (max HP / slow-mo / ammo); even waves give the "drops" set.
+  _offerUpgrade(waveJustCleared) {
+    const setA = waveJustCleared % 2 === 1;
+    const cards = setA ? [
+      { id: 'maxhp', icon: '✛', name: 'VITALITY', desc: '+25 MAX HEALTH', color: '#63ff8a',
+        apply: () => { this.maxHealth += 25; this.health = Math.min(this.maxHealth, this.health + 25); this.hud.setHealth(this.health, this.maxHealth); } },
+      { id: 'slowmo', icon: '◷', name: 'TEMPORAL', desc: '+35% SLOW-MO DURATION', color: '#7cc4ff',
+        apply: () => { this.slowmoCap += 0.35; this.slowmoMeter = 1; } },
+      { id: 'ammo', icon: '▦', name: 'BANDOLIER', desc: '+30% MAX AMMO', color: '#ffb545',
+        apply: () => { this.weapons.setCapacityMult(this.weapons.capacityMult + 0.3); } },
+    ] : [
+      { id: 'ammodrop', icon: '▦', name: 'SCAVENGER', desc: 'MORE AMMO DROPS', color: '#ffb545',
+        apply: () => { this.dropMods.ammo += 0.6; } },
+      { id: 'healthdrop', icon: '✛', name: 'BLOODHOUND', desc: 'MORE HEALTH DROPS', color: '#63ff8a',
+        apply: () => { this.dropMods.health += 0.6; } },
+      { id: 'grendrop', icon: '✸', name: 'DEMOLITIONIST', desc: 'MORE GRENADE DROPS · CARRY +1', color: '#ff9a4a',
+        apply: () => { this.dropMods.grenade += 1.2; this.maxGrenades += 1; this.hud.setGrenades(this.grenades, this.maxGrenades); } },
+    ];
+    for (const c of cards) { const s = this.upgradeStacks[c.id] || 0; if (s > 0) c.stack = 'LV ' + (s + 1); }
+    this.state = 'upgrading';
+    if (!this.input.isTouch) this.input.exitLock();
+    this.audio.waveClear();
+    this.hud.showUpgrades(cards, (i) => this._applyUpgrade(cards[i]), 'WAVE ' + waveJustCleared + ' CLEARED');
+  }
+
+  _applyUpgrade(card) {
+    if (this.state !== 'upgrading') return;
+    card.apply();
+    this.upgradeStacks[card.id] = (this.upgradeStacks[card.id] || 0) + 1;
+    this.hud.hideUpgrades();
+    this.audio.perfect();
+    this.hud.banner(card.name, card.desc, card.color || '#b6f36a');
+    this.enemies.betweenWaves = 1.4;   // snappy resume into the next wave
+    this.state = 'playing';
+    if (!this.input.isTouch) this.input.requestLock();
+  }
+
   // Lob a grenade along the aim with a slight arc. Powerful AoE, no self-damage.
   _throwGrenade() {
     if (this.grenades <= 0 || this._grenadeCd > 0) return;
@@ -543,8 +586,8 @@ class Game {
       // the aggressive loop: a finisher refills ammo and heals
       this.weapons.grantFinisherAmmo();
       this.hud.ammoFlash();
-      this.health = Math.min(MAX_HEALTH, this.health + FINISHER_HEAL);
-      this.hud.setHealth(this.health, MAX_HEALTH);
+      this.health = Math.min(this.maxHealth, this.health + FINISHER_HEAL);
+      this.hud.setHealth(this.health, this.maxHealth);
     }
     // reward slicing through a crowd
     if (this._dashKills === 3) {
@@ -563,7 +606,7 @@ class Game {
     }
     const chance = 0.42 + hpTier * 0.4;
     if (Math.random() > chance) return;
-    const hurt = this.health < MAX_HEALTH * 0.6;
+    const hurt = this.health < this.maxHealth * 0.6;
     // upgrades bias which resource drops
     const hW = (hurt ? 0.62 : 0.24) * this.dropMods.health;
     const aW = (hurt ? 0.38 : 0.76) * this.dropMods.ammo;
@@ -580,7 +623,7 @@ class Game {
     // only a slow trickle, and only up to a low floor — encourages going for drops
     if (this.health < REGEN_CAP && this.time - this.lastDamage > REGEN_DELAY) {
       this.health = Math.min(REGEN_CAP, this.health + REGEN_RATE * dt);
-      this.hud.setHealth(this.health, MAX_HEALTH);
+      this.hud.setHealth(this.health, this.maxHealth);
     }
   }
 

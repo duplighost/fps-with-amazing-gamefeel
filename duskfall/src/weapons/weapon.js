@@ -60,6 +60,7 @@ export class Weapons {
     this.def = WEAPONS.rifle;
     this.model = this.models.rifle;
     this.model.visible = true;
+    this.capacityMult = 1;   // raised by the "+max ammo" upgrade
 
     this.fireTimer = 0;
     this.switchTimer = 0;
@@ -158,13 +159,30 @@ export class Weapons {
     return false;
   }
 
+  // effective ammo cap for a weapon (raised by the +max-ammo upgrade)
+  _cap(id) { return Math.round(WEAPONS[id].capacity * this.capacityMult); }
+
+  // Raise every weapon's ammo capacity (upgrade). Also tops each pool up by the
+  // gained headroom so the pick feels immediately rewarding.
+  setCapacityMult(m) {
+    const prev = this.capacityMult;
+    this.capacityMult = m;
+    if (m > prev) {
+      for (const id of ORDER) {
+        const gained = this._cap(id) - Math.round(WEAPONS[id].capacity * prev);
+        this.ammo[id] = Math.min(this._cap(id), this.ammo[id] + Math.max(0, gained));
+      }
+    }
+    this._emitAmmo();
+  }
+
   // Pickup top-up for both weapons (mult scales the amount). Returns true if any
   // pool actually gained rounds (so a full player doesn't vacuum up a pickup).
   addAmmo(mult = 1) {
     let added = false;
     for (const id of ORDER) {
       const before = this.ammo[id];
-      this.ammo[id] = Math.min(WEAPONS[id].capacity, before + Math.round(WEAPONS[id].drop * mult));
+      this.ammo[id] = Math.min(this._cap(id), before + Math.round(WEAPONS[id].drop * mult));
       if (this.ammo[id] > before) added = true;
     }
     this._emitAmmo();
@@ -173,7 +191,7 @@ export class Weapons {
 
   // A chunky guaranteed reward for a dash finisher (the aggressive "chainsaw" loop).
   grantFinisherAmmo() {
-    for (const id of ORDER) this.ammo[id] = Math.min(WEAPONS[id].capacity, this.ammo[id] + WEAPONS[id].finisher);
+    for (const id of ORDER) this.ammo[id] = Math.min(this._cap(id), this.ammo[id] + WEAPONS[id].finisher);
     this._emitAmmo();
   }
 
@@ -298,7 +316,7 @@ export class Weapons {
 
   _emitAmmo() {
     if (this.onAmmoChange) {
-      this.onAmmoChange({ name: this.def.name, ammo: this.ammo[this.current], capacity: this.def.capacity, kind: this.def.kind });
+      this.onAmmoChange({ name: this.def.name, ammo: this.ammo[this.current], capacity: this._cap(this.current), kind: this.def.kind });
     }
   }
   _emitSpread() {

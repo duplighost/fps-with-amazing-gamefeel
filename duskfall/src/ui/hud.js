@@ -100,10 +100,19 @@ export class HUD {
             <div><b>SHIFT / F</b> dash · strike</div><div><b>CTRL</b> crouch / slide</div>
             <div><b>L-CLICK</b> fire</div><div><b>R-CLICK</b> aim (iron sights)</div>
             <div><b>Q / MID-MOUSE</b> slow-mo</div><div><b>1 / 2 / WHEEL</b> weapons</div>
+            <div><b>G</b> throw grenade</div><div><b>after each wave</b> pick an upgrade</div>
             <div class="wide"><b>climb the sky-islands</b> — jump + air-dash up; brush a ledge to mantle onto it</div>
             <div class="wide"><b>the yeti's snowballs</b> — dash into one to bat it back for massive damage</div>
             <div class="wide"><b>no reload</b> — dash-strike to finish the weak; grab the ammo &amp; health they drop</div>
           </div>
+        </div>
+      </div>
+
+      <div id="upgrade-overlay">
+        <div id="upgrade-inner">
+          <div id="upgrade-eyebrow">WAVE CLEARED</div>
+          <h2 id="upgrade-title">CHOOSE AN UPGRADE</h2>
+          <div id="upgrade-cards"></div>
         </div>
       </div>`;
 
@@ -120,6 +129,9 @@ export class HUD {
       ammoReserve: q('#ammo-reserve'),
       grenades: q('#grenades'),
       grenNum: q('#gren-num'),
+      upgradeOverlay: q('#upgrade-overlay'),
+      upgradeCards: q('#upgrade-cards'),
+      upgradeEyebrow: q('#upgrade-eyebrow'),
       reloadBar: q('#reload-bar'),
       reloadFill: q('#reload-fill'),
       adsVignette: q('#ads-vignette'),
@@ -416,6 +428,42 @@ export class HUD {
   }
 
   hideOverlay() { this.el.overlay.classList.remove('show'); }
+
+  // Roguelite upgrade picker shown between waves. `cards` = [{icon,name,desc,color,stack}].
+  // Clicking a card (or pressing 1/2/3) calls onPick(index).
+  showUpgrades(cards, onPick, eyebrow) {
+    if (eyebrow) this.el.upgradeEyebrow.textContent = eyebrow;
+    const wrap = this.el.upgradeCards;
+    wrap.innerHTML = '';
+    const pick = (i) => {
+      if (this._upgKey) { document.removeEventListener('keydown', this._upgKey, true); this._upgKey = null; }
+      onPick(i);
+    };
+    cards.forEach((c, i) => {
+      const el = document.createElement('button');
+      el.className = 'upgrade-card';
+      el.style.setProperty('--uc', c.color || '#ffce7a');
+      el.innerHTML =
+        `<div class="uc-key">${i + 1}</div>` +
+        `<div class="uc-icon">${c.icon || '✦'}</div>` +
+        `<div class="uc-name">${c.name}</div>` +
+        `<div class="uc-desc">${c.desc}</div>` +
+        (c.stack ? `<div class="uc-stack">${c.stack}</div>` : '');
+      el.addEventListener('click', (e) => { e.stopPropagation(); pick(i); });
+      wrap.appendChild(el);
+    });
+    // keyboard 1/2/3 as an alternative to clicking
+    this._upgKey = (e) => {
+      const idx = { Digit1: 0, Digit2: 1, Digit3: 2 }[e.code];
+      if (idx !== undefined && idx < cards.length) { e.preventDefault(); pick(idx); }
+    };
+    document.addEventListener('keydown', this._upgKey, true);
+    this.el.upgradeOverlay.classList.add('show');
+  }
+  hideUpgrades() {
+    this.el.upgradeOverlay.classList.remove('show');
+    if (this._upgKey) { document.removeEventListener('keydown', this._upgKey, true); this._upgKey = null; }
+  }
 
   // --- per-frame ---------------------------------------------------------
 
