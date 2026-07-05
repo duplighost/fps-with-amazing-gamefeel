@@ -102,6 +102,7 @@ class Game {
     this.controller.ceilFn = this.world.ceilAt;
     this.controller.isUnderFn = this.world.isUnder;
     this.controller.surfaceProbe = this.world.surfaceAt;
+    this.controller.caveSDFFn = this.world.caveSDF;
     this.pickups.groundAt = this.world.groundAt;
     this.projectiles.groundAt = this.world.groundAt;
     this._pondWasFrozen = false;

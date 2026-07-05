@@ -1045,6 +1045,18 @@ export class Enemy {
       this.flyY = damp(this.flyY, ty, def.climb * (this._swoopClimb > 0 ? 1.6 : 1), dt);
       this.pos.y = this.flyY;
     } else {
+      // underground walkers can't phase out through the cave walls either
+      if (this.underground && this.mgr.world && this.mgr.world.caveSDF) {
+        const d = this.mgr.world.caveSDF(this.pos.x, this.pos.z);
+        if (d > -0.6) {
+          const e2 = 0.4;
+          const gx = (this.mgr.world.caveSDF(this.pos.x + e2, this.pos.z) - this.mgr.world.caveSDF(this.pos.x - e2, this.pos.z)) / (2 * e2);
+          const gz = (this.mgr.world.caveSDF(this.pos.x, this.pos.z + e2) - this.mgr.world.caveSDF(this.pos.x, this.pos.z - e2)) / (2 * e2);
+          const L = Math.hypot(gx, gz) || 1;
+          this.pos.x -= (gx / L) * (d + 0.6);
+          this.pos.z -= (gz / L) * (d + 0.6);
+        }
+      }
       this.pos.y = this.mgr.groundFor(this.pos.x, this.pos.z, this.pos.y) + (def.hover || 0);
       // an audible splash when a walker crosses the pond line
       if (this.mgr.world && this.mgr.world.surfaceAt) {
@@ -1751,8 +1763,12 @@ export class EnemyManager {
     // tunnels at a sinkhole instead of uselessly pacing the surface
     if (item.boss && item.t === 'wurm') { x = rand(-3, 3); z = rand(-3, 3); y = -16; }
     else if (this.playerUnder && !TYPES[item.t].flyer && !item.boss && this.world.entrances && Math.random() < 0.65) {
+      // spawn INSIDE the tunnel (out of sight), so they stalk out of the dark
+      // instead of popping into view at the crater floor
       const e = pick(this.world.entrances);
-      x = e.x + rand(-2.5, 2.5); z = e.z + rand(-2.5, 2.5);
+      const t = rand(0.3, 0.6);
+      x = e.x + (e.x * 0.475 - e.x) * t + rand(-1.5, 1.5);
+      z = e.z + (e.z * 0.475 - e.z) * t + rand(-1.5, 1.5);
       y = -13;
     }
     const pos = new THREE.Vector3(x, y, z);

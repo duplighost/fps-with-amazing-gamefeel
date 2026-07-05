@@ -9,7 +9,7 @@ import { buildTerrain } from './terrain.js';
 import { buildFoliage } from './foliage.js';
 import { buildPlatforms } from './platforms.js';
 import { buildCave } from './cave.js';
-import { POND, WATER_Y, inPond, ENTRANCES } from './layout.js';
+import { POND, WATER_Y, inPond, ENTRANCES, caveSDF } from './layout.js';
 import { rand, lerp, clamp01, damp } from '../engine/math.js';
 
 const degToRad = THREE.MathUtils.degToRad;
@@ -107,11 +107,11 @@ export function buildWorld(scene, renderer) {
     renderer.toneMappingExposure = lerp(1.15, 1.0, season) - haunt * 0.13;
     // descend underground: the sky's light dies away and the air goes close + dark
     if (underT > 0.005) {
-      sun.intensity *= 1 - underT * 0.88;
-      hemi.intensity *= 1 - underT * 0.68;
+      sun.intensity *= 1 - underT * 0.85;
+      hemi.intensity *= 1 - underT * 0.45;
       scene.fog.color.lerp(_cave, underT * 0.85);
-      scene.fog.density += underT * 0.03;
-      renderer.toneMappingExposure -= underT * 0.22;
+      scene.fog.density += underT * 0.018;
+      renderer.toneMappingExposure -= underT * 0.12;
     }
     // the pond freezes over in deep winter
     pond.setFrozen(season >= 0.55);
@@ -164,6 +164,7 @@ export function buildWorld(scene, renderer) {
     playRadius: terrain.playRadius,
     groundAt,
     surfaceAt,
+    caveSDF,
     isUnder: terrain.isUnder,
     ceilAt: terrain.ceilAt,
     entrances: ENTRANCES,

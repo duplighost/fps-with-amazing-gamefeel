@@ -61,6 +61,7 @@ export class Controller {
     this.boundary = boundary;        // max radius from origin
     // layer hooks (set by main): layer-aware ground, cave ceiling, pond surface
     this.groundFn = null; this.ceilFn = null; this.isUnderFn = null; this.surfaceProbe = null;
+    this.caveSDFFn = null;           // signed distance to the cave region (walls)
     this.surface = null;             // 'water' | 'ice' | null — what the feet are in/on
     this.pos = new THREE.Vector3(0, 0, 0);
     this.pos.y = terrain.height(0, 0);
@@ -241,6 +242,22 @@ export class Controller {
       this._airJumps = 0;
     } else {
       this.onGround = false;
+    }
+
+    // underground WALLS: while inside the cave, you can't walk out through the
+    // pinch at the region edge (that used to teleport you up through the rock —
+    // now it's simply a wall you slide along)
+    if (this.caveSDFFn && this.isUnderFn && this.isUnderFn(this.pos.x, this.pos.z, this.pos.y + 0.4)) {
+      const d = this.caveSDFFn(this.pos.x, this.pos.z);
+      if (d > -0.55) {
+        const e = 0.4;
+        const gx = (this.caveSDFFn(this.pos.x + e, this.pos.z) - this.caveSDFFn(this.pos.x - e, this.pos.z)) / (2 * e);
+        const gz = (this.caveSDFFn(this.pos.x, this.pos.z + e) - this.caveSDFFn(this.pos.x, this.pos.z - e)) / (2 * e);
+        const L = Math.hypot(gx, gz) || 1;
+        const push = d + 0.55;
+        this.pos.x -= (gx / L) * push;
+        this.pos.z -= (gz / L) * push;
+      }
     }
 
     // underground ceiling: keep the head out of the rock. Open shafts (where the

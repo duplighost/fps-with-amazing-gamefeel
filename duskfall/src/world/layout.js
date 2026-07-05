@@ -6,7 +6,11 @@ import { clamp01, lerp } from '../engine/math.js';
 
 // --- the pond -------------------------------------------------------------
 export const POND = { x: -7, z: -22, r: 6.5, rimBlend: 4.5 };
-export const WATER_Y = -0.6;      // water surface height (absolute)
+// The waterline is CALIBRATED at load by terrain.js: it samples the basin rim
+// and sets the water just below the rim's lowest point, so the pond is always
+// a true depression in the local terrain — never a puddle perched on a hill.
+export let WATER_Y = -0.6;
+export function setPondLevel(y) { WATER_Y = y; }
 export const POND_DEPTH = 0.85;   // pond floor sits this far below the waterline
 
 export function pondDist(x, z) { return Math.hypot(x - POND.x, z - POND.z); }
@@ -18,7 +22,7 @@ export const CAVERN_FLOOR = -16, CAVERN_CEIL = -7.5;
 export const TUNNEL_HALFW = 4;
 export const TUNNEL_FLOOR = -13.5, TUNNEL_CEIL = -9;
 export const ENTRANCE_R = 6;           // sinkhole shaft radius (cave-region side)
-export const ENTRANCE_CARVE = 9;       // surface crater radius that funnels down
+export const ENTRANCE_CARVE = 11;      // surface crater radius that funnels down
 
 // sinkhole entrances around the map (also where the surface is carved down)
 export const ENTRANCES = [0.7, 2.2, 3.9, 5.3].map((a) => ({

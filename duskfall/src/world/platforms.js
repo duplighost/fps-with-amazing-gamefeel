@@ -113,7 +113,7 @@ export function buildPlatforms(scene, terrain) {
   for (let i = 0; i < RING_NODES; i++) {
     const a = (i / RING_NODES) * Math.PI * 2 + Math.sin(i * 12.9898) * 0.3;
     const d = 26 + ((i * 53) % 17) * 0.55;                    // radius 26..35
-    const y = 15.5 + Math.sin(i * 2.3) * 3.4;                 // height 12.1..18.9 (absolute)
+    const y = 17 + Math.sin(i * 2.3) * 3.4;                   // height 13.6..20.4 (absolute)
     nodes.push({ x: Math.cos(a) * d, z: Math.sin(a) * d, y });
   }
   for (let i = 0; i < RING_NODES; i++) {

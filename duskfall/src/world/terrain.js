@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { lerp, clamp01 } from '../engine/math.js';
 import {
-  POND, WATER_Y, POND_DEPTH, pondDist,
+  POND, WATER_Y, POND_DEPTH, pondDist, setPondLevel,
   ENTRANCES, ENTRANCE_CARVE, TUNNEL_FLOOR, CAVERN_R,
   caveSDF, caveFloorY, caveCeilY, isUnder,
 } from './layout.js';
@@ -38,33 +38,53 @@ function fbm(x, z) {
 // basin, sinkhole craters that funnel down into the underground, a roof clamp
 // over the cavern so the ground never dips through it, and a steep rise past
 // PLAY_RADIUS to fence the arena in naturally.
-export function terrainHeight(x, z) {
-  const rolling = (fbm(x * 0.017 + 11, z * 0.017 + 7) - 0.5) * 13.0;
-  const medium = (fbm(x * 0.042 + 31, z * 0.042 + 57) - 0.5) * 4.5;
+// the raw hill shapes (no pond / no craters) — used for pond calibration too
+function baseHeight(x, z) {
+  const rolling = (fbm(x * 0.017 + 11, z * 0.017 + 7) - 0.5) * 18.0;
+  const medium = (fbm(x * 0.042 + 31, z * 0.042 + 57) - 0.5) * 8.0;
   const detail = (fbm(x * 0.085, z * 0.085) - 0.5) * 1.1;
   let h = rolling + medium + detail + 1.2;
   // keep enough rock between the surface and the cavern ceiling below it
   const sdf = caveSDF(x, z);
   if (sdf < 6) h = Math.max(h, lerp(-4.8, h, clamp01(sdf / 6)));
-  // pond basin: a smooth bowl that holds the water, with a guaranteed shoreline
+  const d = Math.hypot(x, z);
+  if (d > PLAY_RADIUS) h += Math.pow((d - PLAY_RADIUS) / 20, 2.2) * 16;
+  return h;
+}
+
+export function terrainHeight(x, z) {
+  let h = baseHeight(x, z);
+  // pond basin: carve DOWN into whatever terrain is here (never raise it), so
+  // the water always sits in a genuine bowl
   const pd = pondDist(x, z);
   const pondOuter = POND.r + POND.rimBlend;
   if (pd < pondOuter) {
     const k = clamp01((pondOuter - pd) / (pondOuter - POND.r * 0.3));
-    h = lerp(h, WATER_Y - POND_DEPTH, k * k * (3 - 2 * k));
+    const ease = k * k * (3 - 2 * k);
+    h = Math.min(h, lerp(h, WATER_Y - POND_DEPTH, ease));
     if (pd < POND.r * 0.92) h = Math.min(h, lerp(WATER_Y - 0.2, WATER_Y - POND_DEPTH, 1 - pd / POND.r));
   }
-  // sinkhole craters: the surface funnels down to the tunnel floor
+  // sinkhole craters: the surface funnels down to the tunnel floor, with a
+  // wide flat mouth so the way in reads clearly from the rim
   for (const e of ENTRANCES) {
     const ed = Math.hypot(x - e.x, z - e.z);
     if (ed < ENTRANCE_CARVE) {
-      const k = clamp01((ENTRANCE_CARVE - ed) / (ENTRANCE_CARVE - 1.8));
-      h = lerp(h, TUNNEL_FLOOR, k * k * (3 - 2 * k));
+      const k = clamp01((ENTRANCE_CARVE - ed) / (ENTRANCE_CARVE - 3.2));
+      h = Math.min(h, lerp(h, TUNNEL_FLOOR, k * k * (3 - 2 * k)));
     }
   }
-  const d = Math.hypot(x, z);
-  if (d > PLAY_RADIUS) h += Math.pow((d - PLAY_RADIUS) / 20, 2.2) * 16;
   return h;
+}
+
+// Calibrate the waterline to the basin's LOWEST rim point (sampled once at
+// load) so the pond is a depression wherever the hills happen to put it.
+{
+  let rimMin = Infinity;
+  for (let i = 0; i < 24; i++) {
+    const a = (i / 24) * Math.PI * 2, r = POND.r + POND.rimBlend;
+    rimMin = Math.min(rimMin, baseHeight(POND.x + Math.cos(a) * r, POND.z + Math.sin(a) * r));
+  }
+  setPondLevel(rimMin - 0.35);
 }
 
 // Layer-aware ground: if the point is inside the underground space (and below
