@@ -285,6 +285,21 @@ export class Audio {
     this._tone({ freq: 500, freq2: 900, dur: 0.1, vol: 0.2, type: 'square', dest });
     this._noiseBurst({ dur: 0.12, vol: 0.24, type: 'bandpass', freq: 2000, sweepTo: 600, q: 1, dest });
   }
+  grenadeThrow() {
+    // a quick pin-pull click + an airy underhand toss whoosh
+    this._tone({ freq: 1200, dur: 0.03, vol: 0.16, type: 'square' });
+    this._noiseBurst({ dur: 0.2, vol: 0.16, type: 'bandpass', freq: 600, sweepTo: 1900, q: 0.7 });
+  }
+  grenadeExplode(pan = 0) {
+    // a huge, powerful detonation: a sharp crack, a massive low boom + sub, grit tail
+    const dest = this._panned(pan);
+    this._noiseBurst({ dur: 0.03, vol: 0.9, type: 'highpass', freq: 4200, sweepTo: 500, dest });
+    this._noiseBurst({ dur: 0.5, vol: 0.85, type: 'lowpass', freq: 1400, sweepTo: 55, q: 0.8, dest });
+    this._noiseBurst({ dur: 0.28, vol: 0.5, type: 'bandpass', freq: 1300, q: 0.6, sweepTo: 260, dest });
+    this._tone({ freq: 78, freq2: 26, dur: 0.5, vol: 0.6, type: 'sine', dest });
+    this._tone({ freq: 46, freq2: 22, dur: 0.4, vol: 0.42, type: 'sine', dest });
+    this._noiseBurst({ dur: 0.5, vol: 0.34, type: 'lowpass', freq: 400, sweepTo: 70, dest, delay: 0.05 });
+  }
   yetiRoar(pan = 0) {
     // a huge, cavernous bellow
     const dest = this._panned(pan);

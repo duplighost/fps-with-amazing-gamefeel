@@ -32,7 +32,7 @@ export class PickupManager {
   }
 
   spawn(type, pos) {
-    const proto = type === 'health' ? this._assets.health : this._assets.ammo;
+    const proto = this._assets[type] || this._assets.ammo;
     const group = proto.clone();
     // clone() shares materials; give each drop its own so fading is independent
     group.traverse((o) => { if (o.material) o.material = o.material.clone(); });
@@ -100,5 +100,19 @@ function buildAssets() {
   health.add(barV, barH);
   health.scale.setScalar(1.0);
 
-  return { ammo, health };
+  // --- grenade: a dark metallic body with a hot glowing band + top light ---
+  const grenade = new THREE.Group();
+  const gshell = new THREE.MeshStandardMaterial({ color: 0x2b3026, roughness: 0.5, metalness: 0.7 });
+  const glowOrange = new THREE.MeshBasicMaterial({ color: 0xff7a2a });
+  const gbody = new THREE.Mesh(new THREE.IcosahedronGeometry(0.22, 0), gshell);
+  gbody.castShadow = true; grenade.add(gbody);
+  const band = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.04, 6, 12), glowOrange);
+  band.rotation.x = Math.PI / 2; grenade.add(band);
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.1, 6), gshell);
+  cap.position.y = 0.22; grenade.add(cap);
+  const light = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8), glowOrange);
+  light.position.y = 0.3; grenade.add(light);
+  grenade.scale.setScalar(1.1);
+
+  return { ammo, health, grenade };
 }

@@ -59,6 +59,7 @@ export class HUD {
         <div id="weapon-name">CARBINE</div>
         <div id="ammo"><span id="ammo-mag">96</span><span id="ammo-sep">/</span><span id="ammo-reserve">160</span></div>
         <div id="reload-bar"><div id="reload-fill"></div></div>
+        <div id="grenades"><span id="gren-icon">✸</span><span id="gren-num">2</span><span id="gren-key">G</span></div>
       </div>
 
       <div id="hud-top">
@@ -117,6 +118,8 @@ export class HUD {
       ammo: q('#ammo'),
       ammoMag: q('#ammo-mag'),
       ammoReserve: q('#ammo-reserve'),
+      grenades: q('#grenades'),
+      grenNum: q('#gren-num'),
       reloadBar: q('#reload-bar'),
       reloadFill: q('#reload-fill'),
       adsVignette: q('#ads-vignette'),
@@ -216,6 +219,12 @@ export class HUD {
     this.el.ammoMag.classList.toggle('empty', out);
     this.el.lowAmmo.classList.toggle('show', low);
     this.el.lowAmmo.textContent = out ? 'NO AMMO' : 'LOW AMMO';
+  }
+
+  setGrenades(n, max) {
+    if (!this.el.grenNum) return;
+    this.el.grenNum.textContent = n;
+    this.el.grenades.classList.toggle('empty', n <= 0);
   }
 
   // brief flash of the ammo readout when a drop tops you up

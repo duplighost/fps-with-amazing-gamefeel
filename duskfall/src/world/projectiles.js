@@ -15,6 +15,12 @@ const TYPES = {
     r: 1.35, speed: 15, damage: 34, color: 0xe6f3ff, life: 7, gravity: 5.5,
     reflectable: true, trail: 'snow',
   },
+  // a thrown fragmentation grenade: arcs, bounces off the ground, and detonates
+  // in a big AoE on a timed fuse. NEVER hurts the player.
+  grenade: {
+    r: 0.26, speed: 24, damage: 240, color: 0xff7a2a, life: 1.35, gravity: 22,
+    reflectable: false, trail: 'grenade', bounce: true, aoe: true, blastR: 7.5, fuse: true,
+  },
 };
 
 const REFLECT_R = 3.2;          // dash within this of an incoming snowball to bat it back
@@ -27,6 +33,7 @@ export class ProjectileManager {
     this._geo = {
       bolt: new THREE.IcosahedronGeometry(0.32, 0),
       snowball: new THREE.IcosahedronGeometry(1.2, 1),
+      grenade: new THREE.IcosahedronGeometry(0.26, 0),
     };
   }
 
@@ -41,6 +48,7 @@ export class ProjectileManager {
       roughness: type === 'snowball' ? 0.9 : 0.4, metalness: 0, flatShading: true,
     });
     if (type === 'snowball') { mat.color.setHex(0xdbe9f5); mat.emissiveIntensity = 0.5; }
+    if (type === 'grenade') { mat.color.setHex(0x2b3026); mat.metalness = 0.7; mat.roughness = 0.5; mat.emissive.setHex(0xff5a1e); mat.emissiveIntensity = 1.3; }
     const mesh = new THREE.Mesh(this._geo[type], mat);
     mesh.position.copy(origin); mesh.castShadow = type === 'snowball';
     this.scene.add(mesh);
@@ -68,6 +76,22 @@ export class ProjectileManager {
       p.mesh.position.copy(p.pos);
       p.mesh.rotation.x += p.spin.x * dt; p.mesh.rotation.y += p.spin.y * dt; p.mesh.rotation.z += p.spin.z * dt;
       this._trail(p);
+
+      // grenade: arc + bounce off the ground, blink faster as the fuse burns down,
+      // then detonate in a big AoE (never hurts the player)
+      if (p.type === 'grenade') {
+        const nearBlow = clamp01(1 - p.life / p.def.life);
+        p.mat.emissiveIntensity = 1.2 + nearBlow * 2.4 + Math.sin(p.life * (30 + nearBlow * 130)) * (0.4 + nearBlow * 0.9);
+        const gy = this.terrain.height(p.pos.x, p.pos.z);
+        if (p.pos.y <= gy + p.r) {
+          p.pos.y = gy + p.r;
+          if (p.vel.y < 0) p.vel.y = -p.vel.y * 0.42;   // bounce restitution
+          p.vel.x *= 0.68; p.vel.z *= 0.68;             // ground friction
+          p.spin.multiplyScalar(0.7);
+        }
+        if (p.life <= 0) { this._explodeGrenade(p, ctx); this._kill(i); }
+        continue;
+      }
 
       // reflect: a dashing player bats an incoming enemy snowball back at the boss
       if (p.def.reflectable && p.owner === 'enemy' && ctx.controller &&
@@ -152,10 +176,55 @@ export class ProjectileManager {
     if (p.def.trail === 'spark') {
       const c = p.reflected ? [1.0, 0.85, 0.4] : [0.73, 0.48, 1.0];
       this.fx.sparks.emit(p.pos.x, p.pos.y, p.pos.z, 0, 0, 0, c[0], c[1], c[2], 0.12, 0.13, 0, 3);
+    } else if (p.def.trail === 'grenade') {
+      // a faint smoke wisp + a hot ember so you can track the arc
+      this.fx.smoke.emit(p.pos.x, p.pos.y, p.pos.z, 0, 0.4, 0, 0.35, 0.32, 0.3, 0.18, 0.22, -0.3, 2.5);
+      this.fx.sparks.emit(p.pos.x, p.pos.y, p.pos.z, 0, 0, 0, 1.0, 0.5, 0.16, 0.1, 0.1, 0, 3);
     } else {
       this.fx.smoke.emit(p.pos.x, p.pos.y, p.pos.z, 0, 0.2, 0, 0.86, 0.92, 1.0, 0.22, 0.5, -0.3, 2.4);
       if (p.reflected) this.fx.sparks.emit(p.pos.x, p.pos.y, p.pos.z, 0, 0, 0, 1.0, 0.85, 0.4, 0.14, 0.4, 0, 3);
     }
+  }
+
+  // A grenade detonation: a big fireball + shock rings, and distance-falloff AoE
+  // damage to every enemy (and the boss) in range. The player is never hurt.
+  _explodeGrenade(p, ctx) {
+    const at = p.pos.clone();
+    const R = p.def.blastR;
+    // spectacle
+    this.fx.shockwave(at.clone().setY(at.y + 0.4), 0xffd070, R, 0.5);
+    this.fx.shockwave(at.clone().setY(at.y + 0.4), 0xff5a1e, R * 0.6, 0.34);
+    this.fx.impactLight(at.clone().setY(at.y + 0.5), 0xff8030, 26, 0.28);
+    this.fx.addTrauma(0.75); this.fx.addHitstop(0.05);
+    for (let k = 0; k < 42; k++) {
+      const a = Math.random() * Math.PI * 2, e = Math.random() * Math.PI * 0.5, s = 5 + Math.random() * 12;
+      const dx = Math.cos(a) * Math.cos(e), dy = Math.sin(e) + 0.4, dz = Math.sin(a) * Math.cos(e);
+      this.fx.debris.emit(at.x, at.y + 0.4, at.z, dx * s, dy * s + 2, dz * s,
+        1.0, 0.55 + Math.random() * 0.3, 0.15, 0.4 + Math.random() * 0.5, 0.18 + Math.random() * 0.28, 16, 2.2);
+    }
+    for (let k = 0; k < 18; k++) {
+      const a = Math.random() * Math.PI * 2, s = 2 + Math.random() * 5;
+      this.fx.smoke.emit(at.x, at.y + 0.6, at.z, Math.cos(a) * s, Math.random() * 3 + 1, Math.sin(a) * s,
+        0.3, 0.26, 0.24, 0.6 + Math.random() * 0.6, 0.7 + Math.random() * 0.6, 1, 1.8);
+    }
+    if (this.audio) this.audio.grenadeExplode(0);
+    // AoE: distance falloff from the blast centre; applied straight through
+    // enemy.takeDamage so kills flow to score/drops. NEVER touches the player.
+    const hurt = (e) => {
+      if (!e || !e.alive) return;
+      const cy = e.pos.y + e.def.height * 0.5;
+      const d = Math.hypot(e.pos.x - at.x, cy - at.y, e.pos.z - at.z) - e.def.radius;
+      if (d > R) return;
+      const fall = clamp01(1 - d / R);
+      const dmg = p.def.damage * (0.45 + 0.55 * fall);
+      const dir = new THREE.Vector3(e.pos.x - at.x, 0, e.pos.z - at.z);
+      if (dir.lengthSq() < 1e-5) dir.set(0, 0, 1); else dir.normalize();
+      e.knockback.addScaledVector(dir, e.def.gait === 'stomp' ? 3 : 8);
+      e.takeDamage(dmg, new THREE.Vector3(e.pos.x, cy, e.pos.z), dir, false);
+    };
+    if (ctx.boss) hurt(ctx.boss);
+    for (const e of ctx.enemies.enemies.slice()) if (e !== ctx.boss) hurt(e);
+    if (ctx.onGrenadeBlast) ctx.onGrenadeBlast(at);
   }
 
   _impact(p, at, ctx, onEnemy) {

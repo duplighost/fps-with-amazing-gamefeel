@@ -35,6 +35,9 @@ const SLOWMO_TARGET = 0.32;   // how slow time runs while engaged
 const SLOWMO_DRAIN = 4.0;     // seconds of use to empty a full meter
 const SLOWMO_REGEN = 8.0;     // seconds to refill from empty
 
+// grenades — few, powerful, refilled by rare drops
+const GRENADE_START = 2;
+
 // dash strike + finisher tuning
 const DASH_DAMAGE = 130;
 const FINISHER_FRAC = 0.42;      // enemy at/below this fraction of max hp is finishable
@@ -87,6 +90,10 @@ class Game {
     this.slowmoMeter = 1; this._slowmoWasActive = false;
     this.season = 0;   // 0 = summer … 1 = deep winter, eased toward the wave target
     this._stormBoost = 0;  // a live yeti whips the field into a full blizzard
+    // grenades: a small stock of powerful throwables, refilled by rare drops
+    this.grenades = GRENADE_START; this.maxGrenades = GRENADE_START; this._grenadeCd = 0;
+    // drop-rate multipliers (raised by upgrades)
+    this.dropMods = { ammo: 1, health: 1, grenade: 1 };
     this.weapons = new Weapons({
       fx: this.fx, audio: this.audio, cam: this.cam, mainCamera: this.camera,
       hitscan: (o, d, r) => this.hitscan(o, d, r),
@@ -144,6 +151,13 @@ class Game {
           this.hud.popText(pos, '+ AMMO', this.camera, 'ammo');
           this.audio.ammoGrab();
         } else { this._scorePickup(pos); }   // already full → never a dead pickup
+      } else if (type === 'grenade') {
+        if (this.grenades < this.maxGrenades) {
+          this.grenades++;
+          this.hud.setGrenades(this.grenades, this.maxGrenades);
+          this.hud.popText(pos, '+ GRENADE', this.camera, 'finisher');
+          this.audio.pickup();
+        } else { this._scorePickup(pos); }
       } else {
         if (this.health < MAX_HEALTH) {
           this.health = Math.min(MAX_HEALTH, this.health + DROP_HEALTH);
@@ -265,6 +279,9 @@ class Game {
     this.world.setStormBoost(0);
     this.hud.hideBoss();
     this.slowmoMeter = 1; this._slowmoWasActive = false;
+    this.grenades = GRENADE_START; this.maxGrenades = GRENADE_START; this._grenadeCd = 0;
+    this.dropMods = { ammo: 1, health: 1, grenade: 1 };
+    this.hud.setGrenades(this.grenades, this.maxGrenades);
     this.season = 0; this._stormBoost = 0; this.world.setSeason(0, 0, 0);   // back to summer
     this._dashHitSet.clear();
     this.fx.trauma = 0; this.fx.hitstop = 0; this.fx.slowmo = 1;
@@ -390,6 +407,8 @@ class Game {
       this.hud.setAim(this.cam.aimT);
       this.hud.setDash(this.controller.dashCharges, this.controller.maxDashCharges, this.controller.dashRechargeRatio, this.controller.isDashing());
       this.weapons.update(realDt, this.controller, this.input);
+      this._grenadeCd = Math.max(0, this._grenadeCd - realDt);
+      if (this.input.wasPressed('grenade')) this._throwGrenade();
       this.pickups.update(realDt, this.controller.pos);
     }
     this.fx.update(realDt);
@@ -432,6 +451,21 @@ class Game {
       const p = this.controller.pos;
       this.fx.dashDust(new THREE.Vector3(p.x, p.y + 0.2, p.z), this.controller.dashDir);
     }
+  }
+
+  // Lob a grenade along the aim with a slight arc. Powerful AoE, no self-damage.
+  _throwGrenade() {
+    if (this.grenades <= 0 || this._grenadeCd > 0) return;
+    this.grenades--;
+    this._grenadeCd = 0.5;
+    const origin = this.camera.getWorldPosition(new THREE.Vector3());
+    const dir = this.cam.aimDirection();
+    const start = origin.clone().addScaledVector(dir, 0.8);
+    const vel = dir.clone().multiplyScalar(24); vel.y += 3.5;   // toss with a lob
+    this.projectiles.spawn('grenade', start, vel.clone().normalize(), { owner: 'player', speed: vel.length() });
+    this.audio.grenadeThrow();
+    this.cam.addFovPunch(2);
+    this.hud.setGrenades(this.grenades, this.maxGrenades);
   }
 
   // Move enemy bolts + boss snowballs, resolve hits, and let a dash reflect a
@@ -522,10 +556,18 @@ class Game {
   // when the player is hurt, ammo otherwise; tough enemies drop more.
   _maybeDrop(e, pos) {
     const hpTier = clamp01(e.maxHealth / 240);
+    // rare grenade drop (much rarer than ammo/health; boosted by its upgrade)
+    if (this.grenades < this.maxGrenades && Math.random() < (0.035 + hpTier * 0.05) * this.dropMods.grenade) {
+      this.pickups.spawn('grenade', pos);
+      return;
+    }
     const chance = 0.42 + hpTier * 0.4;
     if (Math.random() > chance) return;
     const hurt = this.health < MAX_HEALTH * 0.6;
-    const wantHealth = hurt ? Math.random() < 0.62 : Math.random() < 0.24;
+    // upgrades bias which resource drops
+    const hW = (hurt ? 0.62 : 0.24) * this.dropMods.health;
+    const aW = (hurt ? 0.38 : 0.76) * this.dropMods.ammo;
+    const wantHealth = Math.random() < hW / (hW + aW);
     const type = wantHealth ? 'health' : 'ammo';
     this.pickups.spawn(type, pos);
     if (e.maxHealth >= 240 && Math.random() < 0.6) {

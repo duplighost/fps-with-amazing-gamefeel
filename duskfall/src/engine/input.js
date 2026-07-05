@@ -13,6 +13,7 @@ const KEY_MAP = {
   Digit1: 'weapon1', Digit2: 'weapon2', Digit3: 'weapon3',
   KeyF: 'dash',                               // dash (also on Shift + mouse side buttons)
   KeyQ: 'slowmo',                             // hold to bend time (also middle-mouse)
+  KeyG: 'grenade',                            // throw a grenade
 };
 
 export class Input {

@@ -158,6 +158,18 @@ body { font-family: var(--font); color: #fff; user-select: none; -webkit-user-se
 }
 #reload-bar.show { opacity: 1; }
 #reload-fill { height: 100%; width: 0%; background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+#grenades {
+  margin-top: 8px; font-family: var(--mono); font-weight: 800; font-size: 20px;
+  color: #ffb060; display: flex; align-items: center; justify-content: flex-end; gap: 5px;
+}
+#gren-icon { font-size: 18px; text-shadow: 0 0 10px #ff7a2a; }
+#gren-key {
+  font-size: 11px; font-weight: 700; letter-spacing: 1px; color: #0c0c10;
+  background: #ffb060; border-radius: 4px; padding: 1px 5px; margin-left: 3px;
+}
+#grenades.empty { color: rgba(255,255,255,0.35); }
+#grenades.empty #gren-icon { text-shadow: none; }
+#grenades.empty #gren-key { background: rgba(255,255,255,0.25); }
 
 /* ---------- top stats ---------- */
 #hud-top { position: absolute; top: 22px; left: 50%; transform: translateX(-50%); display: flex; gap: 46px; }
