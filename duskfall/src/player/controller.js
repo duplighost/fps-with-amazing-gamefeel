@@ -63,6 +63,7 @@ export class Controller {
     this.groundFn = null; this.ceilFn = null; this.isUnderFn = null; this.surfaceProbe = null;
     this.caveSDFFn = null;           // signed distance to the cave region (walls)
     this.surface = null;             // 'water' | 'ice' | null — what the feet are in/on
+    this.speedMult = 1;              // external slow (frost-elite chill)
     this.pos = new THREE.Vector3(0, 0, 0);
     this.pos.y = terrain.height(0, 0);
     this.vel = new THREE.Vector3();
@@ -165,6 +166,7 @@ export class Controller {
     let maxSpeed = (this.crouchT > 0.5 && !this._sliding) ? CROUCH_SPEED : RUN_SPEED;
     if (aiming) maxSpeed = Math.min(maxSpeed, ADS_WALK);
     if (this.surface === 'water') maxSpeed *= 0.78;   // wading is heavy
+    maxSpeed *= this.speedMult;
     this.isCrouching = this.crouchT > 0.5;
     this.isSprinting = this.onGround && (axis.x || axis.z) && !this._sliding && !this.isCrouching && !aiming;
 

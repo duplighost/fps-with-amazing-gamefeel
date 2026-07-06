@@ -29,12 +29,12 @@ const TYPES = {
   stalker: {
     hp: 42, speed: 8.4, radius: 0.36, height: 1.55, damage: 9, attackCd: 0.8, score: 150,
     skin: 0x44552f, accent: 0x74ff2e, blood: 0x3f6a1e, rate: 12, reach: 0.7,
-    gait: 'run', headY: 0.66, weave: 2.0, lunge: true, voice: 1.7, build: buildStalker,
+    gait: 'run', headY: 0.66, weave: 2.0, lunge: true, flank: true, voice: 1.7, build: buildStalker,
   },
   juggernaut: {
     hp: 340, speed: 2.4, radius: 0.95, height: 2.85, damage: 34, attackCd: 1.6, score: 350,
     skin: 0x41444f, accent: 0xff3311, blood: 0xff5a22, rate: 3.4, reach: 1.4,
-    gait: 'stomp', headY: 0.82, stomp: true, deathTrauma: 0.28, voice: 0.55, build: buildJuggernaut,
+    gait: 'stomp', headY: 0.82, stomp: true, deathTrauma: 0.28, charge: true, voice: 0.55, build: buildJuggernaut,
   },
   wisp: {
     hp: 88, speed: 4.8, radius: 0.44, height: 2.1, damage: 14, attackCd: 1.0, score: 200,
@@ -44,7 +44,16 @@ const TYPES = {
   bloater: {
     hp: 165, speed: 2.7, radius: 0.7, height: 2.2, damage: 20, attackCd: 1.4, score: 250,
     skin: 0x7c7a34, accent: 0xff8a1e, blood: 0x9fb830, rate: 4.5, reach: 1.1,
-    gait: 'waddle', headY: 0.8, burst: true, voice: 0.75, build: buildBloater,
+    gait: 'waddle', headY: 0.8, burst: true, fuse: true, voice: 0.75, build: buildBloater,
+  },
+  // --- HEAVY: a walking stone monolith. Very slow, very tough, and it ZONES —
+  // its stomp sends an expanding quake ring across the ground that punishes
+  // anyone standing on it (jump or dash over the ring; the air game is safety).
+  megalith: {
+    hp: 640, speed: 1.5, radius: 1.15, height: 3.4, damage: 30, attackCd: 2.6, score: 500,
+    skin: 0x5c635b, accent: 0x7dff9a, blood: 0x8a8f85, rate: 2.0, reach: 1.9,
+    gait: 'stomp', headY: 0.86, stomp: true, deathTrauma: 0.4, quake: true, voice: 0.4,
+    build: buildMegalith,
   },
   // --- FLYER: a diving carrion bird that climbs to the sky-islands and swoops ---
   raven: {
@@ -638,6 +647,61 @@ function buildTempest(def) {
   return { root, parts, hitMeshes, skinMats: [body, dark], materials, headHitY: 0.75 };
 }
 
+// THE MEGALITH — stacked stone slabs given a slow, terrible will. Rune-green
+// seams glow between the slabs; a ring of pebbles orbits its shoulders.
+function buildMegalith(def) {
+  const stone = new THREE.MeshStandardMaterial({ color: def.skin, roughness: 0.95, metalness: 0.05, flatShading: true });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x40463f, roughness: 0.95, metalness: 0.05, flatShading: true });
+  const rune = glowMat(def.accent, 2.4);
+  const materials = [stone, dark, rune];
+  const root = new THREE.Group();
+  const hitMeshes = [];
+  const s = def.height / 3.4;
+
+  const hipH = 1.35 * s;
+  const pelvis = new THREE.Group(); pelvis.position.y = hipH; root.add(pelvis);
+  // torso: three offset slabs
+  const slabs = [[1.5, 0.7, 1.0, 0.35, 0.06], [1.3, 0.65, 0.9, 0.95, -0.1], [1.05, 0.55, 0.8, 1.5, 0.08]];
+  for (const [w, h, d, y, rz] of slabs) {
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(w * s, h * s, d * s), stone);
+    slab.position.y = y * s; slab.rotation.y = rz * 2; slab.rotation.z = rz;
+    slab.castShadow = true; pelvis.add(slab);
+    slab.userData.hit = 'body'; hitMeshes.push(slab);
+  }
+  // rune seams glowing between slabs
+  for (const y of [0.66, 1.24]) {
+    const seam = new THREE.Mesh(new THREE.BoxGeometry(1.15 * s, 0.07 * s, 0.75 * s), rune);
+    seam.position.y = y * s; pelvis.add(seam);
+  }
+  // head: a small capstone with one rune eye
+  const headG = new THREE.Group(); headG.position.y = 1.95 * s; pelvis.add(headG);
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(0.55 * s, 0.45 * s, 0.6 * s), dark);
+  cap.rotation.y = 0.3; cap.castShadow = true; headG.add(cap);
+  cap.userData.hit = 'head'; hitMeshes.push(cap);
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.09 * s, 8, 8), rune);
+  eye.position.set(0, 0.02 * s, 0.3 * s); headG.add(eye);
+  // orbiting pebbles (animated in update via parts.orbit)
+  const orbit = new THREE.Group(); orbit.position.y = 1.6 * s; pelvis.add(orbit);
+  for (let i = 0; i < 4; i++) {
+    const peb = new THREE.Mesh(new THREE.IcosahedronGeometry(0.11 * s, 0), dark);
+    peb.position.set(Math.cos(i * 1.57) * 1.1 * s, Math.sin(i * 2.3) * 0.15 * s, Math.sin(i * 1.57) * 1.1 * s);
+    orbit.add(peb);
+  }
+  const parts = { pelvis, head: headG, orbit, hipH, s };
+  // massive block arms
+  const armL = bone(stone, 0.24 * s, 1.5 * s); armL.group.position.set(-0.95 * s, 1.15 * s, 0);
+  const armR = bone(stone, 0.24 * s, 1.5 * s); armR.group.position.set(0.95 * s, 1.15 * s, 0);
+  pelvis.add(armL.group, armR.group); parts.armL = armL.group; parts.armR = armR.group;
+  hitMeshes.push(armL.mesh, armR.mesh);
+  // squat block legs
+  const legL = bone(stone, 0.26 * s, hipH); legL.group.position.set(-0.5 * s, hipH, 0);
+  const legR = bone(stone, 0.26 * s, hipH); legR.group.position.set(0.5 * s, hipH, 0);
+  root.add(legL.group, legR.group); parts.legL = legL.group; parts.legR = legR.group;
+  hitMeshes.push(legL.mesh, legR.mesh);
+
+  return { root, parts, hitMeshes, skinMats: [stone, dark], materials };
+}
+
 function buildColossus(def) {
   const s = def.height / 5.0;
   const armor = new THREE.MeshStandardMaterial({ color: def.skin, roughness: 0.6, metalness: 0.3, flatShading: true });
@@ -892,6 +956,17 @@ export class Enemy {
     this._inWater = false;         // pond wading (for the splash)
     this.frozenT = 0;              // encased when the pond froze around it
     this._ent = new THREE.Vector3();
+    this.elite = null;             // 'blazing' | 'frost' | 'volatile' | 'gilded'
+    this.scoreMult = 1;
+    this._flank = Math.random() < 0.5 ? 1 : -1;   // which side a flanker arcs to
+    this._quakeCd = rand(3, 6);    // megalith stomp cooldown
+    this._quakeT = -1;             // telegraph timer
+    this._ring = null;             // live quake ring { r, hit }
+    this._chgCd = rand(4, 7);      // juggernaut charge cooldown
+    this._chgState = 0;            // 0 idle, 1 telegraph, 2 charging
+    this._chgT = 0; this._chgDir = new THREE.Vector3();
+    this._stunT = 0;               // stunned after crashing into an obstacle
+    this._fusing = -1;             // bloater self-destruct fuse
     this._deathVy = 0;
     this.shootTimer = rand(1.4, this.def.attackCd || 2.5);   // seer bolt cadence
     this._chargeT = -1;                                        // >=0 while telegraphing a shot
@@ -903,6 +978,30 @@ export class Enemy {
     this.group.position.copy(this.pos);
     this.group.scale.setScalar(0.01);
     mgr.scene.add(this.group);
+  }
+
+  // Turn this enemy into an ELITE: aura-tinted, crowned with an orbiting shard,
+  // tougher and meaner — each kind bends a different rule (Risk-of-Rain style).
+  makeElite(kind) {
+    if (this.boss || this.elite) return;
+    this.elite = kind;
+    const AURAS = { blazing: 0xff7a2e, frost: 0x9fd8ff, volatile: 0xba7bff, gilded: 0xffd24a };
+    const aura = new THREE.Color(AURAS[kind] || 0xffffff);
+    if (kind !== 'gilded') {
+      this.maxHealth *= 2.2; this.health *= 2.2;
+      this._enrageDmg *= 1.4;
+      this.scoreMult = 1.6;
+    } else this.scoreMult = 2.5;
+    // permanent aura tint (flash logic keeps working off _baseColors)
+    for (const c of this._baseColors) c.lerp(aura, 0.42);
+    this._applyFlash();
+    // a glowing crown-shard that orbits overhead
+    const m = new THREE.MeshBasicMaterial({ color: AURAS[kind] || 0xffffff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+    const orb = new THREE.Mesh(new THREE.OctahedronGeometry(0.22, 0), m);
+    orb.position.y = this.def.height + 0.55;
+    this.group.add(orb);
+    this._eliteOrb = orb;
+    this.materials.push(m);
   }
 
   isHeadshot(point) {
@@ -918,7 +1017,8 @@ export class Enemy {
     this.health -= dmg;
     this.flash = 1;
     this.hurtLean = clamp((dir.x * Math.sin(this.facing) + dir.z * Math.cos(this.facing)), -1, 1) * 0.25;
-    const kb = (isHead ? 3.5 : 2.2) * (this.def.gait === 'stomp' ? 0.35 : 1);
+    let kb = (isHead ? 3.5 : 2.2) * (this.def.gait === 'stomp' ? 0.35 : 1);
+    if (this.elite === 'frost') kb *= 0.35;   // frost elites barely budge
     this.knockback.addScaledVector(dir, kb); this.knockback.y = 0;
     const pan = this.mgr.panFor(this.pos);
     this.mgr.fx.bloodBurst(point, dir, isHead ? 1.6 : 1, this.def.blood);
@@ -941,13 +1041,28 @@ export class Enemy {
     if (!this._killedByDash) {
       this.mgr.fx.deathBurst(center, this.def.blood);
       if (this.def.burst) {
-        // rupture: a second, larger gas-and-gore burst
+        // rupture: a second, larger gas-and-gore burst — dangerous up close
         this.mgr.fx.deathBurst(center, this.def.blood);
         this.mgr.fx.bloodBurst(center, new THREE.Vector3(0, 1, 0), 2.2, this.def.accent);
         this.mgr.fx.addTrauma(0.2);
+        const bpd = Math.hypot(this.mgr.player.pos.x - this.pos.x, this.mgr.player.pos.z - this.pos.z);
+        if (bpd < 3.4) this.mgr.player.takeDamage(20, this.pos);
       }
     }
     this.mgr.fx.addTrauma(this.def.deathTrauma || 0.12);
+    // elite death payloads: blazing scorches close-by, volatile flings bolts
+    if (this.elite === 'blazing') {
+      this.mgr.fx.deathBurst(center, 0xff7a2e);
+      this.mgr.fx.shockwave(center, 0xff9a4a, 4, 0.4);
+      const pdd = Math.hypot(this.mgr.player.pos.x - this.pos.x, this.mgr.player.pos.z - this.pos.z);
+      if (pdd < 3.2) this.mgr.player.takeDamage(14, this.pos);
+    } else if (this.elite === 'volatile' && this.mgr.projectiles) {
+      for (let k = 0; k < 3; k++) {
+        const a = this.facing + (k - 1) * 2.1;
+        const d2 = new THREE.Vector3(Math.sin(a), 0.12, Math.cos(a));
+        this.mgr.projectiles.spawn('bolt', center.clone(), d2, { owner: 'enemy', damage: 10 });
+      }
+    }
     this.mgr.audio.enemyDeath(pan, this.def.voice);
     this.mgr._onKilled(this, isHead);
   }
@@ -976,6 +1091,15 @@ export class Enemy {
     if (this._pinned) return;   // main owns the corpse transform while it's skewered on a dash
     if (this.deathT >= 0) { this._updateDeath(dt); return; }
     if (this.frozenT > 0) { this._frozenTick(dt); return; }
+    if (this._stunT > 0) {
+      // crashed into something mid-charge: reeling, extra-vulnerable
+      this._stunT -= dt;
+      if (this.parts.pelvis) this.parts.pelvis.rotation.z = Math.sin(this._stunT * 9) * 0.18;
+      this.flash = Math.max(this.flash, 0.25);
+      this._applyFlash();
+      this.group.position.set(this.pos.x, this.pos.y + this.bob, this.pos.z);
+      return;
+    }
     if (this.type === 'wurm') { this._wurmBehavior(dt, player); this.flash = damp(this.flash, 0, 9, dt); this._applyFlash(); return; }
     if (this.type === 'tempest') { this._tempestBehavior(dt, player); this.flash = damp(this.flash, 0, 9, dt); this._applyFlash(); return; }
 
@@ -990,6 +1114,13 @@ export class Enemy {
     const dist = toP.length();
     const pdist = Math.hypot(player.pos.x - this.pos.x, player.pos.z - this.pos.z);
     const dir = dist > 0.001 ? toP.clone().multiplyScalar(1 / dist) : new THREE.Vector3(0, 0, 1);
+    // flankers (stalkers, ravens) arc around to a side instead of beelining
+    if (def.flank && pdist > 7 && !this.enraged && this.lunging <= 0) {
+      const a = this._flank * 0.55;
+      const ca = Math.cos(a), sa = Math.sin(a);
+      const nx = dir.x * ca - dir.z * sa, nz = dir.x * sa + dir.z * ca;
+      dir.set(nx, 0, nz);
+    }
 
     // face player
     const target = Math.atan2(dir.x, dir.z);
@@ -1018,6 +1149,51 @@ export class Enemy {
       this.weavePhase += dt * def.weave;
       const perp = new THREE.Vector3(dir.z, 0, -dir.x);
       desired.addScaledVector(perp, Math.sin(this.weavePhase) * spd * 0.6);
+    }
+
+    // juggernaut BULL CHARGE: telegraph, then a locked straight rush. Baiting it
+    // into a rock/tree stuns it — the obstacles are your matador's cape.
+    if (def.charge && this._chgState === 0 && this.spawnT >= 1) {
+      this._chgCd -= dt;
+      if (this._chgCd <= 0 && pdist > 7 && pdist < 24 && !this.mgr.playerUnder === !this.underground) {
+        this._chgState = 1; this._chgT = 0.8;
+        this.flash = 1;
+        this.mgr.audio.growl(this.mgr.panFor(this.pos), 0.4);
+      }
+    }
+    if (this._chgState === 1) {
+      this._chgT -= dt;
+      desired.set(0, 0, 0);
+      if (this.parts.pelvis) this.parts.pelvis.rotation.x = -0.28;   // rear back
+      this.flash = Math.max(this.flash, 0.3);
+      if (this._chgT <= 0) {
+        this._chgState = 2; this._chgT = 1.15;
+        this._chgDir.set(player.pos.x - this.pos.x, 0, player.pos.z - this.pos.z).normalize();
+        this.mgr.fx.addTrauma(0.2);
+        this.mgr.audio.enemyAttack(this.mgr.panFor(this.pos), 0.35);
+      }
+    } else if (this._chgState === 2) {
+      this._chgT -= dt;
+      desired.copy(this._chgDir).multiplyScalar(this.speed * 4.6);
+      // trample the player on contact (once per charge)
+      if (!this._chgHit && pdist < def.radius + player.radius + 0.6 && Math.abs(player.pos.y - this.pos.y) < def.height) {
+        this._chgHit = true;
+        player.takeDamage(def.damage * 1.2, this.pos);
+        this.mgr.fx.addTrauma(0.3);
+      }
+      // crashing into a collider stuns it hard
+      for (const c of this.mgr.colliders) {
+        const dx2 = this.pos.x + this._chgDir.x * def.radius - c.x, dz2 = this.pos.z + this._chgDir.z * def.radius - c.z;
+        if (dx2 * dx2 + dz2 * dz2 < (c.r + def.radius * 0.6) ** 2) {
+          this._chgState = 0; this._chgCd = rand(6, 9); this._chgHit = false;
+          this._stunT = 1.7;
+          this.mgr.fx.shockwave(new THREE.Vector3(this.pos.x, this.pos.y + 1.4, this.pos.z), 0xffb060, 3.4, 0.4);
+          this.mgr.fx.addTrauma(0.35);
+          this.mgr.audio.bossSlam(this.mgr.panFor(this.pos));
+          break;
+        }
+      }
+      if (this._chgT <= 0) { this._chgState = 0; this._chgCd = rand(6, 9); this._chgHit = false; }
     }
 
     const sep = this.mgr.separation(this, def.radius);
@@ -1077,16 +1253,31 @@ export class Enemy {
     if (this.boss) this._bossBehavior(dt, pdist, vGap, player);
     else if (def.shooter) this._shootBehavior(dt, pdist, player);
     else {
+      if (def.quake) this._quakeBehavior(dt, pdist, player);
+      if (def.fuse && this._fusing < 0 && pdist < 2.8 && this.spawnT >= 1) {
+        // a bloater that gets close arms itself — kill it or GET AWAY
+        this._fusing = 0.8;
+        this.mgr.audio.seerCharge(this.mgr.panFor(this.pos));
+      }
+      if (this._fusing >= 0) {
+        this._fusing -= dt;
+        this.flash = Math.max(this.flash, 0.4 + Math.sin(this.phase * 26) * 0.4);
+        if (this._fusing <= 0) { this.takeDamage(this.health + 1, this.pos.clone().setY(this.pos.y + 1), new THREE.Vector3(0, 1, 0), false); return; }
+      }
       // attack on contact (must be within horizontal AND vertical reach)
       this.attackTimer -= dt;
       if (pdist <= def.reach + player.radius + 0.5 && vGap <= vReach && this.attackTimer <= 0) {
         this.attackTimer = def.attackCd;
         player.takeDamage((def.damage + this.mgr.wave * 0.5) * this._enrageDmg, this.pos);
+        if (this.elite === 'frost' && this.mgr.onPlayerChilled) this.mgr.onPlayerChilled();
         this.mgr.audio.enemyAttack(this.mgr.panFor(this.pos), this.def.voice);
         if (this.parts.armL) { this.parts.armL.rotation.x = -2.4; this.parts.armR.rotation.x = -2.4; }
         if (def.flyer) this._swoopClimb = rand(1.1, 1.7);   // a raven peels off and climbs for another pass
       }
     }
+
+    if (this._eliteOrb) { this._eliteOrb.rotation.y += dt * 4; this._eliteOrb.position.y = this.def.height + 0.55 + Math.sin(this.phase * 2.2) * 0.12; }
+    if (this.parts.orbit) this.parts.orbit.rotation.y += dt * 1.6;
 
     // enrage beacon: pulse + keep the marker floating (billboard-ish orb spin)
     if (this._beacon) {
@@ -1271,6 +1462,52 @@ export class Enemy {
       if (this._diveT >= 1) { this._tstate = 'orbit'; this._diveCd = rand(7, 10); }
     }
     this.group.position.copy(this.pos);
+  }
+
+  // MEGALITH quake: crouch-telegraph, stomp, then an expanding ground ring that
+  // hurts anyone STANDING on the ground when it passes. Jump/dash over it.
+  _quakeBehavior(dt, pdist, player) {
+    if (this._ring) {
+      const ring = this._ring;
+      ring.r += 13.5 * dt;
+      // dust puffs around the current radius
+      for (let k = 0; k < 3; k++) {
+        const a = Math.random() * Math.PI * 2;
+        const px = this.pos.x + Math.cos(a) * ring.r, pz = this.pos.z + Math.sin(a) * ring.r;
+        this.mgr.fx.debris.emit(px, this.mgr.groundFor(px, pz, this.pos.y) + 0.2, pz,
+          0, rand(1, 2.5), 0, 0.5, 0.55, 0.45, 0.25, 0.12, 10, 3);
+      }
+      if (!ring.hit) {
+        const pd = Math.hypot(player.pos.x - this.pos.x, player.pos.z - this.pos.z);
+        const grounded = (player.pos.y - this.mgr.groundFor(player.pos.x, player.pos.z, player.pos.y)) < 1.1;
+        if (Math.abs(pd - ring.r) < 1.3 && grounded) {
+          ring.hit = true;
+          player.takeDamage(24, this.pos);
+        }
+      }
+      if (ring.r > 17) this._ring = null;
+    }
+    if (this._quakeT >= 0) {
+      this._quakeT -= dt;
+      if (this.parts.pelvis) this.parts.pelvis.position.y = this.parts.hipH - Math.min(0.5, (0.7 - this._quakeT));
+      this.flash = Math.max(this.flash, 0.35);
+      if (this._quakeT <= 0) {
+        this._quakeT = -1;
+        if (this.parts.pelvis) this.parts.pelvis.position.y = this.parts.hipH;
+        const gp = new THREE.Vector3(this.pos.x, this.pos.y + 0.2, this.pos.z);
+        this.mgr.fx.shockwave(gp, 0x7dff9a, 16, 1.1);
+        this.mgr.fx.addTrauma(0.4);
+        this.mgr.audio.bossSlam(this.mgr.panFor(this.pos));
+        this._ring = { r: 0.5, hit: false };
+      }
+      return;
+    }
+    this._quakeCd -= dt;
+    if (this._quakeCd <= 0 && pdist < 15 && this.spawnT >= 1) {
+      this._quakeCd = rand(4.5, 7);
+      this._quakeT = 0.7;
+      this.mgr.audio.growl(this.mgr.panFor(this.pos), 0.32);
+    }
   }
 
   // Where should movement head? The player, unless we're on different layers of
@@ -1658,6 +1895,7 @@ export class EnemyManager {
     this.wave = 0; this.score = 0; this.kills = 0;
     this.spawnQueue = []; this.spawnTimer = 0; this.betweenWaves = 0; this.active = false;
     this.boss = null; this.isBossWave = false;
+    this.mutator = null; this._lastMutId = null;   // named per-wave variants
     this.maxConcurrent = 6; this.spawnInterval = 0.28;   // pressure spawner
     this.onScore = null; this.onKill = null; this.onWaveStart = null; this.onWaveCleared = null; this.onCountChange = null; this.onBoss = null;
   }
@@ -1671,6 +1909,7 @@ export class EnemyManager {
     this.enemies = []; this.wave = 0; this.score = 0; this.kills = 0;
     this.spawnQueue = []; this.betweenWaves = 0; this.active = false;
     this.boss = null; this.isBossWave = false;
+    this.mutator = null; this._lastMutId = null;
   }
 
   bossWaveFor(n) { return n > 0 && n % 5 === 0; }
@@ -1686,6 +1925,7 @@ export class EnemyManager {
     this.isBossWave = this.bossWaveFor(n);
 
     if (this.isBossWave) {
+      this.mutator = null;
       // a boss plus a fitting escort. The boss hp climbs each boss encounter.
       const bossNum = n / 5;
       // the boss roster rotates: colossus -> yeti (blizzard) -> wurm (underground)
@@ -1708,7 +1948,27 @@ export class EnemyManager {
       this.maxConcurrent = 6;
       this.spawnInterval = 0.7;
     } else {
-      const count = Math.min(9 + n * 3, 50);
+      let count = Math.min(9 + n * 3, 50);
+      // --- WAVE MUTATORS: every wave past 2 has a good chance of a named twist,
+      // never the same one twice in a row — you can SAY what this wave was.
+      this.mutator = null;
+      if (n >= 3 && Math.random() < 0.62) {
+        const MUTS = [
+          { id: 'swarm', name: 'THE SWARM', desc: 'twice the bodies, half the bone' },
+          { id: 'elite', name: 'ELITE MARCH', desc: 'every one of them is crowned' },
+          { id: 'fog', name: 'FOG OF DREAD', desc: 'they move quick in the murk' },
+          { id: 'night', name: 'NIGHTFALL', desc: 'only their glow gives them away' },
+          { id: 'meteor', name: 'FALLING SKY', desc: 'the sky itself is shooting' },
+          { id: 'bounty', name: 'GILDED HOUR', desc: 'golden marks pay double' },
+        ].filter((m) => m.id !== this._lastMutId);
+        this.mutator = pick(MUTS);
+        this._lastMutId = this.mutator.id;
+        if (this.mutator.id === 'swarm') { count = Math.round(count * 1.8); }
+        if (this.mutator.id === 'elite') { count = Math.round(count * 0.55); }
+        if (this.mutator.id === 'fog') { }
+      }
+      const hpMut = this.mutator && this.mutator.id === 'swarm' ? 0.6 : (this.mutator && this.mutator.id === 'elite' ? 0.85 : 1);
+      const spdMut = this.mutator && this.mutator.id === 'fog' ? 1.15 : 1;
       // weighted spawn pool, unlocking + ramping variety as waves climb
       const pool = [['husk', Math.max(0.5, 2.4 - n * 0.18)]];
       if (n >= 1) pool.push(['stalker', clamp(0.4 + n * 0.12, 0, 1.6)]);
@@ -1716,16 +1976,17 @@ export class EnemyManager {
       if (n >= 3) pool.push(['juggernaut', clamp(0.15 + (n - 3) * 0.06, 0, 0.6)]);
       if (n >= 3) pool.push(['raven', clamp(0.3 + (n - 3) * 0.1, 0, 1.1)]);     // flyers reach the sky-islands
       if (n >= 4) pool.push(['bloater', clamp(0.2 + (n - 4) * 0.08, 0, 0.8)]);
+      if (n >= 5) pool.push(['megalith', clamp(0.12 + (n - 5) * 0.05, 0, 0.5)]);
       if (n >= 5) pool.push(['seer', clamp(0.15 + (n - 5) * 0.06, 0, 0.55)]);    // perched snipers, after the first few levels
       const total = pool.reduce((a, b) => a + b[1], 0);
       for (let i = 0; i < count; i++) {
         let r = Math.random() * total, t = pool[0][0];
         for (const [name, w] of pool) { if (r < w) { t = name; break; } r -= w; }
-        this.spawnQueue.push({ t, hpScale, speedScale });
+        this.spawnQueue.push({ t, hpScale: hpScale * hpMut, speedScale: speedScale * spdMut });
       }
       // keep constant pressure: more enemies on you at once, refilled as you kill
-      this.maxConcurrent = Math.min(6 + n, 15);
-      this.spawnInterval = Math.max(0.12, 0.3 - n * 0.02);
+      this.maxConcurrent = Math.min(6 + n, 15) + (this.mutator && this.mutator.id === 'swarm' ? 5 : 0);
+      this.spawnInterval = Math.max(0.12, 0.3 - n * 0.02) * (this.mutator && this.mutator.id === 'swarm' ? 0.6 : 1);
     }
     this.spawnTimer = 0;
     if (this.onWaveStart) this.onWaveStart(n, this.isBossWave);
@@ -1773,6 +2034,13 @@ export class EnemyManager {
     }
     const pos = new THREE.Vector3(x, y, z);
     const e = new Enemy(this, item.t, pos, item.hpScale, item.speedScale);
+    // elites: rarer normally, guaranteed on an ELITE MARCH, golden on a BOUNTY
+    if (!item.boss) {
+      const kinds = ['blazing', 'frost', 'volatile'];
+      if (this.mutator && this.mutator.id === 'elite') e.makeElite(pick(kinds));
+      else if (this.mutator && this.mutator.id === 'bounty' && Math.random() < 0.3) e.makeElite('gilded');
+      else if (this.wave >= 4 && Math.random() < Math.min(0.22, 0.045 * (this.wave - 3))) e.makeElite(pick(kinds));
+    }
     this.enemies.push(e);
     if (item.boss) { this.boss = e; if (this.onBoss) this.onBoss('spawn', e); }
     if (this.onCountChange) this.onCountChange(this.aliveCount());

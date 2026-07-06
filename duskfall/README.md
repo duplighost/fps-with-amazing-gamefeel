@@ -84,6 +84,18 @@ a photo. The whole scene is generated at load, then run through a filmic camera:
   the golden hour.
 - **The viewmodel** is drawn in a separate depth-cleared overlay pass so the gun
   never clips into the world — a hallmark of a polished FPS.
+- **A world past the fence.** The arena sits in a real valley now: the rim of
+  highlands is capped so genuine sky shows above it, with **two rings of hazy
+  mountain silhouettes** layered behind it (fog-exempt, hand-tinted per season —
+  the classic matte-painting trick), **drifting procedural clouds**, and
+  **fireflies** wandering the meadow at golden hour that die back as winter
+  comes. The grass **sways** in the wind (a tiny vertex-shader injection).
+- **Standing stones.** Three megalithic landmarks give fights geography: **the
+  Henge** (a ring of stones with two mantle-able fallen lintels and an altar
+  hop-up), **the Arch** (dash under it, fight on top of it), and **the Sleeper**
+  (a half-buried monolith that ramps you up to a perch). They block movement and
+  line-of-sight — orbit a fight around them, bait charges into them, or hold
+  their tops.
 
 ## Seasons & dread
 
@@ -160,18 +172,60 @@ signature-coloured blood, and its own gait and behaviour:
 - **Husk** — ashen foot-soldier with amber eyes. The steady marcher; the backbone
   of every wave.
 - **Stalker** — small, fast, hunched raptor-thing lit toxic green. Weaves as it
-  runs and lunges the last few metres.
+  runs and lunges the last few metres. Packs **flank** now — each one commits to
+  a curving left or right arc instead of beelining, so a group envelops you.
 - **Juggernaut** — a towering charcoal tank with a molten-red core and cracks.
   Slow and relentless; the ground shakes when it walks and shrugs off knockback.
+  Past mid-run it learns the **bull charge**: it rears back (that's your tell),
+  then rushes in a locked straight line that tramples for heavy damage — but bait
+  it into a tree, a rock or a standing stone and it **crashes and stuns itself**
+  for a long, punishable beat. The obstacles are your matador's cape.
 - **Wisp** — a legless hovering specter glowing cyan. Bobs and drifts over the
   terrain, unravelling into light when killed.
 - **Bloater** — a bulbous pustular sack glowing orange. Waddles in and **ruptures**
-  on death in a second, larger burst.
+  on death in a second, larger burst that hurts you up close. Get within arm's
+  reach and it **arms itself** — a fast accelerating flash, then it detonates on
+  its own. Kill it at range or dash *through* and out of the blast.
 - **Raven** — a dark-violet carrion bird with swept, magenta-lit wings. It **flies**,
   climbing to the sky-islands and diving at you — so getting airborne is no escape.
 - **Seer** — a hovering violet caster that holds a high **standoff and snipes** you
   with charged bolts from above (its eye glows as it winds up — read it and dodge).
   Perches by the islands after the first few levels.
+- **Megalith** — a walking stone monolith, moss-seamed and rune-lit, orbited by
+  slow pebbles. The heaviest non-boss in the game and nearly unpushable, but
+  *very* slow — a zoner, not a chaser. Its stomp sends an expanding **quake
+  ring** rippling across the ground that punishes anyone standing on it: jump,
+  dash, or be airborne when the ring passes. It's the enemy that forces you to
+  play the air game.
+
+### Elites
+
+From wave 4 on (and guaranteed on certain mutator waves), any regular creature
+can spawn **elite** — tinted to its affix, crowned with a spinning sigil, over
+twice as tough, and always worth a drop:
+
+- **Blazing** (orange) — detonates on death, scorching everything within arm's
+  reach. Don't dash-kill it in your own face.
+- **Frost** (pale blue) — barely flinches from knockback, and its hits **chill**
+  you to half speed for a beat. Getting tagged in a crowd is how you die.
+- **Volatile** (violet) — death flings a fan of live bolts outward. Kill it,
+  then move.
+- **Gilded** (gold) — no tougher than normal, but worth **2.5× score** and extra
+  loot. A moving jackpot: prioritise it before the wave ends.
+
+### No two waves alike
+
+Past the first couple of waves, each non-boss wave has a good chance of rolling a
+**named mutator** (never the same one twice in a row) — the wave banner tells you
+what you're in for: **SWARM** (a flood of weaker enemies, spawning fast),
+**ELITE MARCH** (fewer, but every one an elite), **ROLLING FOG** (the fog closes
+in and the horde hurries), **NIGHTFALL** (the light dies to a murky gloam),
+**FALLING SKY** (light meteors rain across the whole field all wave), and
+**BOUNTY** (gilded elites everywhere — a score rush). On top of that, once per
+wave, a **mid-wave surprise** fires: either a reinforcement surge pours in at
+your flank, or a **supply beacon** flares and drops a cache of ammo, health and
+grenades — a little director's hand on the pacing, so the middle of a wave never
+goes flat.
 
 The roster unlocks and its mix ramps as the waves climb. A **pressure spawner**
 keeps a steady crowd bearing down on you and refills it as you cut them down, so

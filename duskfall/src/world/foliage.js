@@ -30,9 +30,11 @@ function lumpySphere(radius, detail, jitter, rng) {
   return geo;
 }
 
-// no foliage in the pond or down the sinkhole craters
+// no foliage in the pond, down the sinkhole craters, or inside the landmarks
+const LM = [{ x: 2.1, z: 29.9, r: 9 }, { x: 24, z: -6, r: 6.5 }, { x: -26, z: 6, r: 6 }];
 const blockedSpot = (x, z) => inPond(x, z, 1.5) ||
-  ENTRANCES.some((e) => Math.hypot(x - e.x, z - e.z) < ENTRANCE_CARVE + 1);
+  ENTRANCES.some((e) => Math.hypot(x - e.x, z - e.z) < ENTRANCE_CARVE + 1) ||
+  LM.some((l) => Math.hypot(x - l.x, z - l.z) < l.r);
 
 export function buildFoliage(scene, terrain) {
   const rng = mulberry32(1337);
@@ -173,6 +175,21 @@ function buildGrass(scene, terrain, rng) {
     map: tex, alphaTest: 0.5, transparent: false, side: THREE.DoubleSide,
     color: 0x6d8a3a, roughness: 1.0, metalness: 0,
   });
+  // a gentle wind sway: blade tips lean on a slow travelling wave (per-tuft
+  // phase from the instance's world position, so the field ripples)
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = { value: 0 };
+    shader.vertexShader = 'uniform float uTime;\n' + shader.vertexShader.replace(
+      '#include <begin_vertex>',
+      `#include <begin_vertex>
+      #ifdef USE_INSTANCING
+        float swayPh = instanceMatrix[3][0] * 0.35 + instanceMatrix[3][2] * 0.27;
+        transformed.x += sin(uTime * 1.7 + swayPh) * 0.09 * smoothstep(0.02, 0.5, position.y);
+        transformed.z += cos(uTime * 1.3 + swayPh * 1.4) * 0.06 * smoothstep(0.02, 0.5, position.y);
+      #endif`
+    );
+    mat._shader = shader;
+  };
   const COUNT = 4200;
   const mesh = new THREE.InstancedMesh(merged, mat, COUNT);
   mesh.receiveShadow = true;

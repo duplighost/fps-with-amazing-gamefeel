@@ -9,6 +9,7 @@ import { buildTerrain } from './terrain.js';
 import { buildFoliage } from './foliage.js';
 import { buildPlatforms } from './platforms.js';
 import { buildCave } from './cave.js';
+import { buildLandmarks } from './landmarks.js';
 import { POND, WATER_Y, inPond, ENTRANCES, caveSDF } from './layout.js';
 import { rand, lerp, clamp01, damp } from '../engine/math.js';
 
@@ -61,6 +62,12 @@ export function buildWorld(scene, renderer) {
   const platforms = buildPlatforms(scene, terrain);
   const cave = buildCave(scene);
   const pond = buildPond(scene);
+  const landmarks = buildLandmarks(scene, terrain);
+  foliage.colliders.push(...landmarks.colliders);      // stones block walkers too
+  platforms.platforms.push(...landmarks.tops);         // lintels/arch/slab are stand-able
+  const mountains = buildMountains(scene);
+  const clouds = buildClouds(scene);
+  const fireflies = buildFireflies(scene, terrain);
   const motes = buildMotes(scene);
   const snow = buildSnow(scene);
   let underT = 0, pondTime = 0;   // 0 = on the surface … 1 = fully underground
@@ -126,6 +133,10 @@ export function buildWorld(scene, renderer) {
     foliage.grass.visible = season < 0.82;      // snow swallows the tufts
     // sky-islands tint with the ground
     platforms.setSeason(season);
+    // distant scenery cools with the year
+    mountains.setSeason(season, haunt);
+    clouds.setSeason(season, haunt);
+    fireflies.setFade((1 - clamp01(season * 1.25)) * (1 - haunt * 0.4));
     // particles: pollen motes give way to snow (a boss can force the storm harder)
     const st = Math.max(storm, stormBoost);
     snow.setIntensity(clamp01(Math.max((season - 0.32) / 0.68, stormBoost)), st);
@@ -158,7 +169,7 @@ export function buildWorld(scene, renderer) {
     colliders: foliage.colliders,
     platforms: platforms.platforms,
     nook: platforms.nook,
-    solids: [terrain.mesh, ...foliage.solids, ...platforms.solids, ...cave.solids],
+    solids: [terrain.mesh, ...foliage.solids, ...platforms.solids, ...cave.solids, ...landmarks.solids],
     sun,
     sunDir,
     playRadius: terrain.playRadius,
@@ -174,6 +185,9 @@ export function buildWorld(scene, renderer) {
     setStormBoost,
     update(dt, playerPos) {
       pondTime += dt; pond.update(pondTime);
+      clouds.update(dt);
+      fireflies.update(dt, pondTime);
+      if (foliage.mats.grass._shader) foliage.mats.grass._shader.uniforms.uTime.value = pondTime;
       const target = terrain.isUnder(playerPos.x, playerPos.z, playerPos.y + 0.6) ? 1 : 0;
       underT = damp(underT, target, 3.2, dt);
       cave.setUnderground(underT);
@@ -182,6 +196,102 @@ export function buildWorld(scene, renderer) {
       snow.update(dt, playerPos);
       sun.position.copy(sunDir).multiplyScalar(160).add(playerPos);
       sun.target.position.copy(playerPos);
+    },
+  };
+}
+
+// A ring of jagged distant peaks past the treeline — silhouette layering that
+// makes the arena read as a place inside a world. Exponential fog would erase
+// anything 200m out entirely, so the peaks opt out of fog and fake the haze
+// with hand-picked colors + transparency: two rings at two tones = cheap depth.
+function buildMountains(scene) {
+  const matFar = new THREE.MeshBasicMaterial({ color: 0x8d8496, fog: false, transparent: true, opacity: 0.55, depthWrite: false });
+  const matNear = new THREE.MeshBasicMaterial({ color: 0x6f687e, fog: false, transparent: true, opacity: 0.75, depthWrite: false });
+  const group = new THREE.Group();
+  for (let i = 0; i < 26; i++) {
+    const a = (i / 26) * Math.PI * 2 + Math.sin(i * 9.1) * 0.12;
+    const far = i % 2 === 0;
+    // the terrain's own rolling rim (~170m out, up to ~27m tall) forms the
+    // horizon, so the peaks must be tall enough to clear it from ground level
+    const d = (far ? 215 : 165) + ((i * 37) % 11) * 5;
+    const h = (far ? 72 : 50) + ((i * 53) % 17) * 3.2;
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(34 + ((i * 29) % 7) * 5, h, 5), far ? matFar : matNear);
+    cone.position.set(Math.cos(a) * d, h * 0.35, Math.sin(a) * d);
+    cone.rotation.y = i * 1.7;
+    group.add(cone);
+  }
+  scene.add(group);
+  const WF = new THREE.Color(0x8d8496), CF = new THREE.Color(0xa8b2c2), HF = new THREE.Color(0x554e64);
+  const WN = new THREE.Color(0x6f687e), CN = new THREE.Color(0x8e9aac), HN = new THREE.Color(0x423c52);
+  return { setSeason(s, h) {
+    matFar.color.copy(WF).lerp(CF, s).lerp(HF, h * 0.5);
+    matNear.color.copy(WN).lerp(CN, s).lerp(HN, h * 0.5);
+  } };
+}
+
+// Soft procedural clouds drifting high over the field.
+function buildClouds(scene) {
+  const c = document.createElement('canvas'); c.width = 128; c.height = 64;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(64, 32, 4, 64, 32, 60);
+  g.addColorStop(0, 'rgba(255,255,255,0.85)');
+  g.addColorStop(0.55, 'rgba(255,255,255,0.4)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 64);
+  const tex = new THREE.CanvasTexture(c);
+  const sprites = [];
+  for (let i = 0; i < 12; i++) {
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.42, depthWrite: false, fog: false });
+    const s = new THREE.Sprite(mat);
+    const a = (i / 12) * Math.PI * 2 + Math.sin(i * 7.7);
+    s.position.set(Math.cos(a) * (40 + (i * 31) % 80), 58 + (i * 17) % 26, Math.sin(a) * (40 + (i * 43) % 80));
+    const w = 40 + (i * 23) % 34;
+    s.scale.set(w, w * 0.34, 1);
+    scene.add(s); sprites.push(s);
+  }
+  const W = new THREE.Color(0xfff2dd), C = new THREE.Color(0xd7dde6), D = new THREE.Color(0x8a8f9c);
+  return {
+    setSeason(se, h) { const col = new THREE.Color().copy(W).lerp(C, se).lerp(D, h * 0.6); for (const s of sprites) s.material.color.copy(col); },
+    update(dt) {
+      for (const s of sprites) {
+        s.position.x += dt * 0.7;
+        if (s.position.x > 150) s.position.x = -150;
+      }
+    },
+  };
+}
+
+// Fireflies wandering the meadow at golden hour — they die back as winter comes.
+function buildFireflies(scene, terrain) {
+  const COUNT = 80;
+  const pos = new Float32Array(COUNT * 3);
+  const seed = new Float32Array(COUNT);
+  for (let i = 0; i < COUNT; i++) {
+    const a = rand(0, Math.PI * 2), d = rand(18, 52);
+    const x = Math.cos(a) * d, z = Math.sin(a) * d;
+    pos[i * 3] = x; pos[i * 3 + 1] = terrain.height(x, z) + rand(0.4, 2.4); pos[i * 3 + 2] = z;
+    seed[i] = rand(0, Math.PI * 2);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const mat = new THREE.PointsMaterial({
+    color: 0xffe27a, size: 0.12, transparent: true, opacity: 0.85,
+    blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
+  });
+  const points = new THREE.Points(geo, mat);
+  points.frustumCulled = false; scene.add(points);
+  let fade = 1;
+  return {
+    setFade(f) { fade = clamp01(f); points.visible = fade > 0.03; },
+    update(dt, t) {
+      if (fade <= 0.03) return;
+      mat.opacity = fade * (0.5 + Math.sin(t * 2.1) * 0.35);
+      for (let i = 0; i < COUNT; i++) {
+        pos[i * 3] += Math.sin(t * 0.7 + seed[i]) * dt * 0.5;
+        pos[i * 3 + 1] += Math.cos(t * 0.9 + seed[i] * 2) * dt * 0.3;
+        pos[i * 3 + 2] += Math.cos(t * 0.6 + seed[i]) * dt * 0.5;
+      }
+      geo.attributes.position.needsUpdate = true;
     },
   };
 }

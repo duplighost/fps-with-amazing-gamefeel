@@ -48,7 +48,11 @@ function baseHeight(x, z) {
   const sdf = caveSDF(x, z);
   if (sdf < 6) h = Math.max(h, lerp(-4.8, h, clamp01(sdf / 6)));
   const d = Math.hypot(x, z);
-  if (d > PLAY_RADIUS) h += Math.pow((d - PLAY_RADIUS) / 20, 2.2) * 16;
+  // fence the arena with a ridge of highlands — capped, so it reads as a
+  // valley rim with real sky and distant peaks above it, not an endless wall
+  // (uncapped, the far vertices climbed to ~2000 and the fogged cliff face
+  // WAS the visible "sky", depth-occluding everything behind it)
+  if (d > PLAY_RADIUS) h += Math.min(Math.pow((d - PLAY_RADIUS) / 20, 2.2) * 16, 26);
   return h;
 }
 

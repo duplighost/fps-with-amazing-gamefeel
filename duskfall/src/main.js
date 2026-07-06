@@ -108,6 +108,9 @@ class Game {
     this._pondWasFrozen = false;
     this._meteors = [];            // wurm-wave surface strikes [{x,z,y,t}]
     this._meteorCd = 1; this._surgeCd = 0.5;
+    this._chillT = 0;              // frost-elite slow
+    this._mutNight = 0; this._mutFog = 0;   // damped mutator moods
+    this._eventDone = true; this._eventAt = 0;   // one surprise event per wave
     this._dashHitSet = new Set();     // enemies struck by the current dash
     this._dashKills = 0; this._dashFinishers = 0;
     this._dashPin = null;             // { e, t } — a killed corpse skewered in front
@@ -156,7 +159,7 @@ class Game {
       this.combo++; this.comboTimer = 3.2;
       const mult = 1 + Math.min(this.combo, 20) * 0.1;    // up to x3
       const base = e.def.score;
-      const gained = Math.round(base * mult) + (isHead ? 30 : 0);
+      const gained = Math.round(base * mult * (e.scoreMult || 1)) + (isHead ? 30 : 0);
       this.score += gained;
       this.hud.setScore(this.score);
       this.hud.popScore(pos, gained, this.camera);
@@ -193,6 +196,8 @@ class Game {
       }
     };
     this.enemies.onCountChange = (n) => this.hud.setEnemies(n);
+    // frost elites chill you on hit: heavy boots for a moment
+    this.enemies.onPlayerChilled = () => { this._chillT = 1.3; };
     this.enemies.onWaveStart = (n, isBoss) => {
       this.hud.setWave(n);
       if (isBoss) {
@@ -200,7 +205,12 @@ class Game {
         const subs = { colossus: 'awakens', yeti: 'brings the whiteout', wurm: 'is beneath you — get underground', tempest: 'owns the sky — get OFF the ground' };
         const t = this.enemies.bossTypeFor(n);
         this.hud.banner('⚠  BOSS  ⚠', names[t] + ' ' + subs[t], '#ff6a3a');
+      } else if (this.enemies.mutator) {
+        this.hud.banner('WAVE ' + n + ' — ' + this.enemies.mutator.name, this.enemies.mutator.desc, '#d9a9ff');
       } else this.hud.banner('WAVE ' + n, (n % 5 === 4) ? 'brace — a boss looms next' : 'incoming', '#ffce7a');
+      // schedule this wave's surprise
+      this._eventDone = false;
+      this._eventAt = (this.time - this.runStart) + rand(12, 22);
     };
     this.enemies.onWaveCleared = (n) => {
       const bonus = n * 100;
@@ -319,6 +329,8 @@ class Game {
     this._meteors.length = 0; this._meteorCd = 1; this._surgeCd = 0.5;
     this._dashHitSet.clear(); this._dashPin = null; this._dashAge = 0;
     this.fx.trauma = 0; this.fx.hitstop = 0; this.fx.slowmo = 1;
+    this._chillT = 0; this.controller.speedMult = 1;
+    this._mutNight = 0; this._mutFog = 0; this._eventDone = true;
     this.maxHealth = MAX_HEALTH; this.slowmoCap = 1; this.upgradeStacks = {};
     this.health = this.maxHealth; this.invuln = 0; this.lastDamage = this.time;
     this.weapons.setCapacityMult(1);
@@ -431,6 +443,37 @@ class Game {
       this._stormBoost = damp(this._stormBoost, yetiActive ? 1 : 0, 1.5, realDt);
       this.world.setStormBoost(this._stormBoost);
       this.world.setSeason(this.season, haunt, Math.max(storm, this._stormBoost));
+
+      // frost chill wears off
+      this._chillT = Math.max(0, this._chillT - realDt);
+      this.controller.speedMult = this._chillT > 0 ? 0.55 : 1;
+
+      // mutator moods: fog closes in / night falls (damped so waves blend)
+      const mut = this.enemies.mutator;
+      this._mutFog = damp(this._mutFog, mut && mut.id === 'fog' ? 1 : 0, 1.6, realDt);
+      this._mutNight = damp(this._mutNight, mut && mut.id === 'night' ? 1 : 0, 1.6, realDt);
+      if (this._mutFog > 0.01) this.scene.fog.density += this._mutFog * 0.014;
+      if (this._mutNight > 0.01) {
+        this.renderer.toneMappingExposure *= 1 - this._mutNight * 0.45;
+        this.world.sun.intensity *= 1 - this._mutNight * 0.65;
+      }
+      // FALLING SKY: ambient meteors anywhere on the surface (light, dodgeable)
+      if (mut && mut.id === 'meteor' && !this.enemies.isBossWave) {
+        this._ambMeteorCd = (this._ambMeteorCd ?? 2) - gdt;
+        if (this._ambMeteorCd <= 0) {
+          this._ambMeteorCd = rand(1.6, 3.2);
+          const a = Math.random() * Math.PI * 2, d = 8 + Math.random() * 30;
+          const x = this.controller.pos.x + Math.cos(a) * d, z = this.controller.pos.z + Math.sin(a) * d;
+          this._meteors.push({ x, z, y: this.world.terrain.height(x, z), t: 0.8, light: true });
+          this.fx.shockwave(new THREE.Vector3(x, this.world.terrain.height(x, z) + 0.3, z), 0xff8a3a, 3.6, 0.7);
+        }
+      }
+      // one mid-wave SURPRISE per wave (surge of reinforcements or a supply drop)
+      if (!this._eventDone && this.time - this.runStart > this._eventAt &&
+          this.enemies.aliveCount() > 2 && !this.enemies.isBossWave && this.state === 'playing') {
+        this._eventDone = true;
+        this._fireMidWaveEvent();
+      }
 
       // the moment the pond freezes over: a set-piece (encase whatever's wading)
       const frozenNow = this.world.pond.frozen;
@@ -550,6 +593,35 @@ class Game {
     }
   }
 
+  // A mid-wave surprise: either a reinforcement surge crashes in from one
+  // direction, or a supply beacon lands loot somewhere worth running to.
+  _fireMidWaveEvent() {
+    if (Math.random() < 0.5) {
+      this.hud.banner('REINFORCEMENTS', 'they heard the fighting', '#ff9a6a');
+      this.audio.waveStart();
+      const a = Math.random() * Math.PI * 2;
+      const p = new THREE.Vector3(this.controller.pos.x + Math.cos(a) * 26, 0, this.controller.pos.z + Math.sin(a) * 26);
+      this.enemies.spawnAdds(p, 5);
+    } else {
+      this.hud.banner('SUPPLY DROP', 'a beacon falls — race it', '#7df9ff');
+      this.audio.perfect();
+      const a = Math.random() * Math.PI * 2, d = 14 + Math.random() * 12;
+      const x = this.controller.pos.x + Math.cos(a) * d, z = this.controller.pos.z + Math.sin(a) * d;
+      const y = this.world.terrain.height(x, z);
+      this.fx.shockwave(new THREE.Vector3(x, y + 1, z), 0x7df9ff, 8, 1.2);
+      this.fx.impactLight(new THREE.Vector3(x, y + 2, z), 0x7df9ff, 20, 1.0);
+      setTimeout(() => {
+        if (this.state !== 'playing') return;
+        for (let i = 0; i < 4; i++) {
+          const j = new THREE.Vector3(x + (Math.random() - 0.5) * 3, 0, z + (Math.random() - 0.5) * 3);
+          this.pickups.spawn(i < 2 ? 'ammo' : (i === 2 ? 'health' : 'grenade'), j);
+        }
+        this.fx.shockwave(new THREE.Vector3(x, y + 0.5, z), 0xbfe8ff, 5, 0.5);
+        this.audio.pickup();
+      }, 1100);
+    }
+  }
+
   // Boss arena hazards. THE WURM's wave rains meteors on the SURFACE (get
   // underground, where the fight is). THE TEMPEST charges the open GROUND (get
   // up on the ring/islands — dash i-frames also carry you across safely).
@@ -583,7 +655,7 @@ class Game {
       this.fx.addTrauma(0.3);
       this.audio.bossSlam(0);
       const dp = Math.hypot(this.player.pos.x - m.x, this.player.pos.z - m.z);
-      if (dp < 4.5 && Math.abs(this.player.pos.y - m.y) < 3.5) this.playerTakeDamage(16, at);
+      if (dp < 4.5 && Math.abs(this.player.pos.y - m.y) < 3.5) this.playerTakeDamage(m.light ? 9 : 16, at);
     }
 
     if (isTempest) {
@@ -831,6 +903,15 @@ class Game {
   // when the player is hurt, ammo otherwise; tough enemies drop more.
   _maybeDrop(e, pos) {
     const hpTier = clamp01(e.maxHealth / 240);
+    // elites (and gilded bounty marks) ALWAYS pay out
+    if (e.elite) {
+      this.pickups.spawn(this.health < this.maxHealth * 0.6 ? 'health' : 'ammo', pos);
+      if (e.scoreMult > 2 || Math.random() < 0.3) {
+        const j = new THREE.Vector3((Math.random() - 0.5) * 1.4, 0, (Math.random() - 0.5) * 1.4);
+        this.pickups.spawn(Math.random() < 0.5 ? 'health' : 'ammo', pos.clone().add(j));
+      }
+      return;
+    }
     // rare grenade drop (much rarer than ammo/health; boosted by its upgrade)
     if (this.grenades < this.maxGrenades && Math.random() < (0.035 + hpTier * 0.05) * this.dropMods.grenade) {
       this.pickups.spawn('grenade', pos);
