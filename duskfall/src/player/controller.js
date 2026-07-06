@@ -62,6 +62,7 @@ export class Controller {
     // layer hooks (set by main): layer-aware ground, cave ceiling, pond surface
     this.groundFn = null; this.ceilFn = null; this.isUnderFn = null; this.surfaceProbe = null;
     this.caveSDFFn = null;           // signed distance to the cave region (walls)
+    this.inCraterFn = null;          // inside a sinkhole crater mouth (open air)
     this.surface = null;             // 'water' | 'ice' | null — what the feet are in/on
     this.speedMult = 1;              // external slow (frost-elite chill)
     this.pos = new THREE.Vector3(0, 0, 0);
@@ -249,7 +250,8 @@ export class Controller {
     // underground WALLS: while inside the cave, you can't walk out through the
     // pinch at the region edge (that used to teleport you up through the rock —
     // now it's simply a wall you slide along)
-    if (this.caveSDFFn && this.isUnderFn && this.isUnderFn(this.pos.x, this.pos.z, this.pos.y + 0.4)) {
+    if (this.caveSDFFn && this.isUnderFn && this.isUnderFn(this.pos.x, this.pos.z, this.pos.y + 0.4) &&
+        !(this.inCraterFn && this.inCraterFn(this.pos.x, this.pos.z))) {
       const d = this.caveSDFFn(this.pos.x, this.pos.z);
       if (d > -0.55) {
         const e = 0.4;
@@ -334,6 +336,8 @@ export class Controller {
   _collide() {
     const r = RADIUS;
     for (const c of this.colliders) {
+      if (c.yMin !== undefined && this.pos.y < c.yMin) continue;   // e.g. the cavern under the great tree
+      if (c.yMax !== undefined && this.pos.y > c.yMax) continue;
       const dx = this.pos.x - c.x, dz = this.pos.z - c.z;
       const min = c.r + r;
       const d2 = dx * dx + dz * dz;

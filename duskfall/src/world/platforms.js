@@ -1,27 +1,33 @@
-// The SKY LAYER. An irregular closed RING of elongated floating islands —
-// chains of overlapping grass-topped earth chunks — undulating between heights,
-// so there's a whole second level you can live on: run the loop, fight along
-// it, drop off anywhere. Plus low stepping islands as on-ramps and the NOOK
-// (loot-cage perch). Every disc is a one-way platform top (land from above,
-// mantle onto its ledge) and everything tints with the seasons.
+// The SKY LAYER — the crown of the GREAT TREE. An irregular closed canopy-walk
+// of wooden branch-pads rings the arena, carried on huge limbs that all reach
+// back to the tree in the middle of the map (nothing floats unsupported).
+// Four CROSS-BRANCHES cut through the crown, so you can travel across the
+// circle instead of walking the loop, and low branch pads step you up from the
+// ground. Every pad is a one-way platform top (land from above, mantle onto
+// its ledge) and all the wood + leaves tint with the seasons.
 
 import * as THREE from 'three';
-import { rand, clamp01, lerp } from '../engine/math.js';
+import { rand, clamp, clamp01, lerp } from '../engine/math.js';
 
-// low on-ramps (heights RELATIVE to local ground): the nook + two steppers
+// low on-ramps (heights RELATIVE to local ground): branch pads off the trunk
 const SPECS = [
-  { a: 5.0, d: 13, y: 6.5, r: 3.0, nook: true },
+  { a: 5.0, d: 13, y: 6.5, r: 3.0 },
   { a: 0.6, d: 16, y: 8.0, r: 3.6 },
   { a: 2.6, d: 18, y: 10.5, r: 3.2 },
 ];
 
-// the ring: node count, radius band and ABSOLUTE height band (a coherent layer)
+// the ring: node count and disc spacing along each edge (heavy overlap)
 const RING_NODES = 7;
-const RING_SPACING = 4.6;      // disc spacing along each edge (heavy overlap)
+const RING_SPACING = 4.6;
+// ring nodes whose limbs are walkable CROSS-BRANCHES through the crown
+const CHORD_NODES = [1, 2, 4, 6];
+// the crown hub the cross-branches meet at (matches the tree's crown perch)
+const HUB = { x: 0.3, z: 0.6, y: 16.4, r: 2.1 };
 
 // season colour triples [summer, autumn, winter]
-const GRASS = [0x5f7a34, 0x9c7a2c, 0xcfd8de];
-const EARTH = [0x6a5334, 0x6a5334, 0x8792a0];
+const BARK = [0x4b3826, 0x4b3826, 0x3b342e];
+const PLANK = [0x84643e, 0x8a5c30, 0x6e675c];
+const LEAF = [0x53702f, 0xc06a1e, 0x9ba2a4];
 const _a = new THREE.Color(), _b = new THREE.Color(), _c = new THREE.Color();
 function seasonCol(out, tri, season) {
   _a.setHex(tri[0]); _b.setHex(tri[1]); _c.setHex(tri[2]);
@@ -30,84 +36,82 @@ function seasonCol(out, tri, season) {
 }
 
 export function buildPlatforms(scene, terrain) {
-  const grassMat = new THREE.MeshStandardMaterial({ color: GRASS[0], roughness: 0.9, metalness: 0, flatShading: true });
-  const earthMat = new THREE.MeshStandardMaterial({ color: EARTH[0], roughness: 0.95, metalness: 0, flatShading: true });
-  const crystalMat = new THREE.MeshStandardMaterial({ color: 0x0a0a12, emissive: 0x59d4ff, emissiveIntensity: 2.6, roughness: 0.3, metalness: 0 });
+  const barkMat = new THREE.MeshStandardMaterial({ color: BARK[0], roughness: 0.95, metalness: 0, flatShading: true });
+  const plankMat = new THREE.MeshStandardMaterial({ color: PLANK[0], roughness: 0.9, metalness: 0, flatShading: true });
+  const leafMat = new THREE.MeshStandardMaterial({ color: LEAF[0], roughness: 0.9, metalness: 0, flatShading: true });
 
   const solids = [];
   const colliders = [];   // {x,z,y,r} circular one-way tops for the controller
-  let nookDesc = null;
+  const up = new THREE.Vector3(0, 1, 0);
 
-  // one island disc: grass cap over a craggy tapering body. `decor` adds the
-  // spikes/crystals/boulders (nodes + standalones only — chain discs stay lean).
-  function addDisc(x, z, y, r, decor, nook) {
+  // one branch-pad: a plank top over a gnarled bark knot. `decor` adds leaf
+  // tufts + a hanging vine (nodes only — chain pads stay lean).
+  function addPad(x, z, y, r, decor) {
     const g = new THREE.Group();
     g.position.set(x, 0, z);
 
-    const bodyH = decor ? 2.6 : 2.0, bodyTop = y - 0.4;
-    const bodyGeo = new THREE.CylinderGeometry(r * 0.98, r * 0.42, bodyH, 8, 1);
-    bodyGeo.translate(0, bodyTop - bodyH / 2, 0);
-    _roughen(bodyGeo, 0.28);
-    const body = new THREE.Mesh(bodyGeo, earthMat);
-    body.castShadow = true; body.receiveShadow = true; g.add(body); solids.push(body);
+    const topGeo = new THREE.CylinderGeometry(r * 1.02, r * 0.9, 0.5, 9, 1);
+    topGeo.translate(0, y - 0.25, 0);
+    _roughen(topGeo, 0.1);
+    const top = new THREE.Mesh(topGeo, plankMat);
+    top.castShadow = true; top.receiveShadow = true; g.add(top); solids.push(top);
 
-    const capH = 0.7;
-    const capGeo = new THREE.CylinderGeometry(r * 1.04, r * 0.99, capH, 9, 1);
-    capGeo.translate(0, y - capH / 2, 0);
-    const cap = new THREE.Mesh(capGeo, grassMat);
-    cap.castShadow = true; cap.receiveShadow = true; g.add(cap); solids.push(cap);
+    const knotH = decor ? 1.4 : 1.0;
+    const knotGeo = new THREE.CylinderGeometry(r * 0.82, r * 0.3, knotH, 8, 1);
+    knotGeo.translate(0, y - 0.5 - knotH / 2, 0);
+    _roughen(knotGeo, 0.24);
+    const knot = new THREE.Mesh(knotGeo, barkMat);
+    knot.castShadow = true; knot.receiveShadow = true; g.add(knot); solids.push(knot);
 
     if (decor) {
       for (let i = 0; i < 2; i++) {
-        const sr = r * rand(0.28, 0.48), sh = rand(2.2, 4.4);
-        const spike = new THREE.Mesh(new THREE.ConeGeometry(sr, sh, 6), earthMat);
-        spike.rotation.x = Math.PI;
-        spike.position.set(rand(-r * 0.4, r * 0.4), y - bodyH - sh / 2 + 0.4, rand(-r * 0.4, r * 0.4));
-        spike.castShadow = true; g.add(spike);
+        const ta = rand(0, Math.PI * 2), td = r * rand(0.55, 0.85);
+        const tuft = new THREE.Mesh(new THREE.IcosahedronGeometry(rand(0.8, 1.3), 0), leafMat);
+        tuft.position.set(Math.cos(ta) * td, y + rand(0.25, 0.6), Math.sin(ta) * td);
+        tuft.rotation.set(rand(0, 3), rand(0, 3), rand(0, 3));
+        tuft.castShadow = true; g.add(tuft);
       }
-      const cr = new THREE.Mesh(new THREE.OctahedronGeometry(rand(0.4, 0.62), 0), crystalMat);
-      cr.position.set(rand(-r * 0.3, r * 0.3), y - bodyH - 1.0, rand(-r * 0.3, r * 0.3));
-      cr.rotation.set(rand(0, 3), rand(0, 3), rand(0, 3));
-      g.add(cr);
-      for (let i = 0; i < 2; i++) {
-        const ba = rand(0, Math.PI * 2), bd = rand(0, r * 0.7);
-        const boul = new THREE.Mesh(new THREE.IcosahedronGeometry(rand(0.3, 0.55), 0), earthMat);
-        boul.position.set(Math.cos(ba) * bd, y + 0.15, Math.sin(ba) * bd);
-        boul.rotation.set(rand(0, 3), rand(0, 3), rand(0, 3));
-        boul.castShadow = true; g.add(boul);
-      }
-    }
-
-    if (nook) {
-      // the loot-cage: decorative glowing bars pickups funnel up into
-      const cageR = 0.9, cageH = 2.0;
-      for (let i = 0; i < 6; i++) {
-        const a = (i / 6) * Math.PI * 2;
-        const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, cageH, 5), crystalMat);
-        bar.position.set(Math.cos(a) * cageR, y + 1.05, Math.sin(a) * cageR);
-        g.add(bar);
-      }
-      const ring1 = new THREE.Mesh(new THREE.TorusGeometry(cageR, 0.05, 6, 16), crystalMat);
-      ring1.rotation.x = Math.PI / 2; ring1.position.y = y + 0.08; g.add(ring1);
-      const ring2 = new THREE.Mesh(new THREE.TorusGeometry(cageR, 0.05, 6, 16), crystalMat);
-      ring2.rotation.x = Math.PI / 2; ring2.position.y = y + 2.05; g.add(ring2);
-      nookDesc = { x, z, y, cageFloorY: y + 0.4, cageConfine: 0.75, catchR: 6.0, cap: 5 };
+      // a vine trailing off the underside, tipped with leaves
+      const vl = rand(1.6, 3.2);
+      const vine = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.04, vl, 4), barkMat);
+      const va = rand(0, Math.PI * 2), vd = r * rand(0.4, 0.75);
+      vine.position.set(Math.cos(va) * vd, y - 0.6 - vl / 2, Math.sin(va) * vd);
+      g.add(vine);
+      const tip = new THREE.Mesh(new THREE.IcosahedronGeometry(0.32, 0), leafMat);
+      tip.position.set(Math.cos(va) * vd, y - 0.6 - vl, Math.sin(va) * vd);
+      g.add(tip);
     }
 
     scene.add(g);
     colliders.push({ x, z, y, r: r * 0.98 });
   }
 
-  // --- low on-ramps (relative to the local ground) ---
+  // a limb: a tapered bough from a point in the tree's crown out to a pad
+  function addLimb(ox, oy, oz, tx, ty, tz, r0, r1) {
+    const from = new THREE.Vector3(ox, oy, oz), to = new THREE.Vector3(tx, ty, tz);
+    const dir = to.clone().sub(from);
+    const len = dir.length();
+    const geo = new THREE.CylinderGeometry(r1, r0, len, 7, Math.max(2, (len / 7) | 0));
+    _roughen(geo, 0.09);
+    const limb = new THREE.Mesh(geo, barkMat);
+    limb.position.copy(from).addScaledVector(dir, 0.5);
+    limb.quaternion.setFromUnitVectors(up, dir.normalize());
+    limb.castShadow = true; limb.receiveShadow = true;
+    scene.add(limb); solids.push(limb);
+  }
+
+  // --- low on-ramps: branch pads on their own boughs off the trunk ---
   for (const spec of SPECS) {
     const x = Math.cos(spec.a) * spec.d;
     const z = Math.sin(spec.a) * spec.d;
-    addDisc(x, z, spec.y + Math.max(terrain.height(x, z), 0), spec.r, true, spec.nook);
+    const y = spec.y + Math.max(terrain.height(x, z), 0);
+    addPad(x, z, y, spec.r, true);
+    addLimb(rand(-0.6, 0.6), y + rand(0.8, 1.8), rand(-0.6, 0.6), x, y - 0.7, z, 0.75, 0.35);
   }
 
-  // --- the RING: an irregular closed loop of stretched islands in the sky ---
+  // --- the RING: an irregular closed canopy-walk in the sky ---
   // Nodes at jittered angle/radius/height; each edge is a chain of overlapping
-  // discs whose height eases between the nodes, so the whole loop undulates —
+  // pads whose height eases between the nodes, so the whole loop undulates —
   // a closed shape, but nothing like a perfect circle.
   const nodes = [];
   for (let i = 0; i < RING_NODES; i++) {
@@ -125,24 +129,43 @@ export function buildPlatforms(scene, terrain) {
       const x = lerp(A.x, B.x, t), z = lerp(A.z, B.z, t);
       const y = lerp(A.y, B.y, tt);
       const r = (s === 0 ? 3.8 : 2.9) + Math.sin((i * 7 + s) * 3.1) * 0.35;
-      addDisc(x, z, y, r, s === 0, false);
+      addPad(x, z, y, r, s === 0);
+    }
+  }
+
+  // --- every node hangs off the great tree by a limb; four of those limbs
+  // are wide CROSS-BRANCHES you can WALK, chained with pads from the crown
+  // hub out to their node — cut across the circle instead of running the loop
+  for (let i = 0; i < RING_NODES; i++) {
+    const n = nodes[i];
+    const chord = CHORD_NODES.includes(i);
+    const oy = clamp(n.y + rand(0.5, 2.0), 13.5, 18.5);
+    addLimb(rand(-1, 1), oy, rand(-1, 1), n.x, n.y - 0.8, n.z, chord ? 1.25 : 0.95, chord ? 0.62 : 0.45);
+    if (!chord) continue;
+    const L = Math.hypot(n.x - HUB.x, n.z - HUB.z);
+    const steps = Math.ceil((L - 5) / 4.2);
+    for (let s = 1; s <= steps; s++) {
+      const t = s / (steps + 1), tt = t * t * (3 - 2 * t);
+      const x = lerp(n.x, HUB.x, t), z = lerp(n.z, HUB.z, t);
+      const y = lerp(n.y, HUB.y, tt);
+      addPad(x, z, y, 2.2 + Math.sin((i * 5 + s) * 2.7) * 0.25, s % 3 === 0);
     }
   }
 
   return {
     solids,
     platforms: colliders,
-    nook: nookDesc,
-    mats: { grass: grassMat, earth: earthMat, crystal: crystalMat },
+    nook: null,   // the loot cage lives on the great tree's deck now
+    mats: { bark: barkMat, plank: plankMat, leaf: leafMat },
     setSeason(season) {
-      seasonCol(grassMat.color, GRASS, season);
-      seasonCol(earthMat.color, EARTH, season);
-      crystalMat.emissive.setHex(season > 0.5 ? 0x8fa0ff : 0x59d4ff);
+      seasonCol(barkMat.color, BARK, season);
+      seasonCol(plankMat.color, PLANK, season);
+      seasonCol(leafMat.color, LEAF, season);
     },
   };
 }
 
-// nudge each vertex outward a little for a hand-chiselled, non-cylindrical look
+// nudge each vertex outward a little for a hand-carved, non-cylindrical look
 function _roughen(geo, amt) {
   const p = geo.attributes.position;
   for (let i = 0; i < p.count; i++) {

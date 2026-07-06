@@ -15,10 +15,10 @@ const TYPES = {
     r: 1.35, speed: 15, damage: 34, color: 0xe6f3ff, life: 7, gravity: 5.5,
     reflectable: true, trail: 'snow',
   },
-  // a thrown fragmentation grenade: arcs, bounces off the ground, and detonates
-  // in a big AoE on a timed fuse. NEVER hurts the player.
+  // the VOID ORB: arcs, bounces, then blooms into a singularity that drags the
+  // whole pack into one point and detonates it. NEVER hurts the player.
   grenade: {
-    r: 0.26, speed: 24, damage: 240, color: 0xff7a2a, life: 1.35, gravity: 22,
+    r: 0.26, speed: 24, damage: 240, color: 0xba7bff, life: 1.35, gravity: 22,
     reflectable: false, trail: 'grenade', bounce: true, aoe: true, blastR: 7.5, fuse: true,
   },
 };
@@ -49,7 +49,7 @@ export class ProjectileManager {
       roughness: type === 'snowball' ? 0.9 : 0.4, metalness: 0, flatShading: true,
     });
     if (type === 'snowball') { mat.color.setHex(0xdbe9f5); mat.emissiveIntensity = 0.5; }
-    if (type === 'grenade') { mat.color.setHex(0x2b3026); mat.metalness = 0.7; mat.roughness = 0.5; mat.emissive.setHex(0xff5a1e); mat.emissiveIntensity = 1.3; }
+    if (type === 'grenade') { mat.color.setHex(0x1c1626); mat.metalness = 0.7; mat.roughness = 0.5; mat.emissive.setHex(0xba7bff); mat.emissiveIntensity = 1.5; }
     const mesh = new THREE.Mesh(this._geo[type], mat);
     mesh.position.copy(origin); mesh.castShadow = type === 'snowball';
     this.scene.add(mesh);
@@ -90,7 +90,13 @@ export class ProjectileManager {
           p.vel.x *= 0.68; p.vel.z *= 0.68;             // ground friction
           p.spin.multiplyScalar(0.7);
         }
-        if (p.life <= 0) { this._explodeGrenade(p, ctx); this._kill(i); }
+        if (p.life <= 0) {
+          // the orb doesn't just explode — it OPENS: main runs the void
+          // (vacuum + detonation). Fallback to a plain blast if unhooked.
+          if (ctx.onVoidOpen) ctx.onVoidOpen(p.pos.clone());
+          else this._explodeGrenade(p, ctx);
+          this._kill(i);
+        }
         continue;
       }
 

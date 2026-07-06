@@ -67,9 +67,16 @@ a photo. The whole scene is generated at load, then run through a filmic camera:
 - **Instanced foliage** — hundreds of low-poly trees, rocks and bushes scattered
   with a density that thins toward the middle and thickens into a treeline, drawn
   in a handful of instanced draw calls.
+- **THE GREAT TREE.** A giant oak towers over the middle of the map and the
+  whole sky layer is its crown: spiral branch steps climb to a plank **treehouse
+  deck** holding the **loot cage** (drops from fights below still funnel up into
+  it), and the canopy above is a high perch. Nothing floats unsupported any
+  more — every platform in the sky hangs off this tree.
 - **THREE LAYERS.** The world is a sandwich now. **The sky**: an irregular closed
-  RING of connected, undulating islands you can run laps on, plus low stepping
-  islands and the **nook** (its loot-cage still funnels + stacks kills made below).
+  **canopy-walk** of wooden branch-pads rings the arena, carried on huge limbs
+  that all reach back to the great tree; four of those limbs are walkable
+  **cross-branches** that cut through the crown hub, so you can travel across
+  the circle instead of running the loop.
   **The surface**: real rolling hills and a pond you wade through — which freezes
   into slippery ice in deep winter (with a freeze set-piece that encases anything
   caught wading). **The underground**: four sinkhole craters funnel down into
@@ -90,6 +97,13 @@ a photo. The whole scene is generated at load, then run through a filmic camera:
   the classic matte-painting trick), **drifting procedural clouds**, and
   **fireflies** wandering the meadow at golden hour that die back as winter
   comes. The grass **sways** in the wind (a tiny vertex-shader injection).
+- **Sinkholes ringed in fire.** Every crater mouth is circled by ember fangs, a
+  warm always-on light, and a tall amber **glow column** rising out of the hole
+  — you can spot the way underground from anywhere on the field.
+- **Solid foliage.** Trees, bushes and rocks are watertight lumps now (the old
+  per-vertex jitter tore polyhedron corners apart into floating shards full of
+  holes); canopies also carry a dark inner core so they read dense from every
+  angle.
 - **Standing stones.** Three megalithic landmarks give fights geography: **the
   Henge** (a ring of stones with two mantle-able fallen lintels and an altar
   hop-up), **the Arch** (dash under it, fight on top of it), and **the Sleeper**
@@ -139,9 +153,13 @@ Game feel is the sum of a hundred small responses. The big ones here:
   you dash into **body-checks** you to a mass-scaled rebound stop (never a phase-through;
   air-dashes keep their arc). Catch one **low on health** and it's a **FINISHER** — gold
   flash, slow-mo, bonus points, and a refill of **ammo + health**.
-- **Grenades** — a small stock of powerful frags (press **G**) that arc, bounce, and
-  detonate on a fuse in a huge AoE fireball — one-shotting a cluster and chunking
-  bosses — but they **never hurt you**. Refilled by rare drops; a HUD counter tracks them.
+- **The VOID ORB** (press **G**) — the throwable stopped being a worse gun and
+  became a crowd-shaping superpower: the orb arcs, bounces, then **blooms into a
+  singularity** that drags every non-boss enemy in a wide radius into one
+  screaming, helpless knot — floated off their feet — and then **detonates the
+  packed ball**. It's a panic button when you're cornered *and* a combo setup:
+  vacuum the pack, then meet it with a shotgun blast or a dash-skewer. It still
+  **never hurts you**. Refilled by rare drops; a HUD counter tracks them.
 - **Roguelite upgrades** — clear a wave and the field freezes for a **choice of three
   stacking upgrades**. Odd waves boost capacity (max health / slow-mo duration / max
   ammo); even waves boost your **drop rates** (ammo / health / grenades). A run compounds.
@@ -226,6 +244,13 @@ wave, a **mid-wave surprise** fires: either a reinforcement surge pours in at
 your flank, or a **supply beacon** flares and drops a cache of ammo, health and
 grenades — a little director's hand on the pacing, so the middle of a wave never
 goes flat.
+
+**Every creature glows.** All grounded enemies carry **magma-vein cracks** in
+their hide, lit in their signature accent colour — so the horde reads at a
+glance across fog, NIGHTFALL waves, and the underground dark. And nothing gets
+stuck any more: underground enemies path up and OUT of the sinkhole craters
+(they used to pool at the bottom of the bowl), and a stall watchdog quietly
+re-drops any wedged straggler at the arena edge.
 
 The roster unlocks and its mix ramps as the waves climb. A **pressure spawner**
 keeps a steady crowd bearing down on you and refills it as you cut them down, so

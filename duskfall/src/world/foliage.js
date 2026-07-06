@@ -20,10 +20,15 @@ function lumpySphere(radius, detail, jitter, rng) {
   const geo = new THREE.IcosahedronGeometry(radius, detail);
   const p = geo.attributes.position;
   const v = new THREE.Vector3();
+  const seed = rng() * 100;
   for (let i = 0; i < p.count; i++) {
     v.fromBufferAttribute(p, i);
-    const s = 1 + (rng() - 0.5) * jitter;
-    v.multiplyScalar(s);
+    // jitter by a hash of the corner's POSITION, not its index: polyhedron
+    // geometries duplicate each corner once per face, and jittering the
+    // copies independently tore the canopy into shards full of holes
+    const h = Math.sin(v.x * 12.9898 + v.y * 78.233 + v.z * 37.719 + seed) * 43758.5453;
+    const st = 1 + ((h - Math.floor(h)) - 0.5) * jitter;
+    v.multiplyScalar(st);
     p.setXYZ(i, v.x, v.y, v.z);
   }
   geo.computeVertexNormals();
@@ -31,7 +36,12 @@ function lumpySphere(radius, detail, jitter, rng) {
 }
 
 // no foliage in the pond, down the sinkhole craters, or inside the landmarks
-const LM = [{ x: 2.1, z: 29.9, r: 9 }, { x: 24, z: -6, r: 6.5 }, { x: -26, z: 6, r: 6 }];
+const LM = [
+  { x: 2.1, z: 29.9, r: 9 },     // the henge
+  { x: 24, z: -6, r: 6.5 },      // the arch
+  { x: -26, z: 6, r: 6 },        // the sleeper
+  { x: 0, z: 0, r: 8.5 },        // the great tree
+];
 const blockedSpot = (x, z) => inPond(x, z, 1.5) ||
   ENTRANCES.some((e) => Math.hypot(x - e.x, z - e.z) < ENTRANCE_CARVE + 1) ||
   LM.some((l) => Math.hypot(x - l.x, z - l.z) < l.r);
@@ -51,10 +61,13 @@ export function buildFoliage(scene, terrain) {
   // --- trees ---
   const trunkGeo = new THREE.CylinderGeometry(0.24, 0.42, 4.4, 6);
   trunkGeo.translate(0, 2.2, 0);
-  const canopyGeo = lumpySphere(2.7, 1, 0.5, rng);
+  const canopyGeo = lumpySphere(2.7, 1, 0.62, rng);
   canopyGeo.translate(0, 5.4, 0);
+  const coreGeo = lumpySphere(2.05, 1, 0.4, rng);
+  coreGeo.translate(0, 5.2, 0);
   const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4b3826, roughness: 0.95, flatShading: true });
   const canopyMat = new THREE.MeshStandardMaterial({ color: 0x53702f, roughness: 0.85, flatShading: true });
+  const coreMat = new THREE.MeshStandardMaterial({ color: 0x3a5121, roughness: 0.95, flatShading: true });
 
   const treeSpots = [];
   for (let i = 0; i < 1600; i++) {
@@ -71,6 +84,7 @@ export function buildFoliage(scene, terrain) {
   }
   const treeTrunks = new THREE.InstancedMesh(trunkGeo, trunkMat, treeSpots.length);
   const treeCanopies = new THREE.InstancedMesh(canopyGeo, canopyMat, treeSpots.length);
+  const treeCores = new THREE.InstancedMesh(coreGeo, coreMat, treeSpots.length);
   treeTrunks.castShadow = treeCanopies.castShadow = true;
   treeTrunks.receiveShadow = treeCanopies.receiveShadow = true;
   treeSpots.forEach((s, i) => {
@@ -81,9 +95,11 @@ export function buildFoliage(scene, terrain) {
     m.compose(pos, q, scl);
     treeTrunks.setMatrixAt(i, m);
     treeCanopies.setMatrixAt(i, m);
+    treeCores.setMatrixAt(i, m);
     colliders.push({ x: s.x, z: s.z, r: 0.55 * sc });
   });
-  scene.add(treeTrunks, treeCanopies);
+  treeCores.castShadow = false; treeCores.receiveShadow = true;
+  scene.add(treeTrunks, treeCanopies, treeCores);
 
   // --- rocks ---
   const rockGeo = lumpySphere(1, 0, 0.7, rng);
@@ -139,7 +155,7 @@ export function buildFoliage(scene, terrain) {
 
   return {
     colliders, grass, solids: [treeTrunks, rocks],
-    mats: { trunk: trunkMat, canopy: canopyMat, rock: rockMat, bush: bushMat, grass: grass.material },
+    mats: { trunk: trunkMat, canopy: canopyMat, canopyCore: coreMat, rock: rockMat, bush: bushMat, grass: grass.material },
   };
 }
 

@@ -112,13 +112,18 @@ export function buildLandmarks(scene, terrain) {
   return { solids, colliders, tops };
 }
 
-// bevel-ish vertex noise so the slabs read as worked stone, not boxes
+// bevel-ish vertex noise so the slabs read as worked stone, not boxes.
+// Position-hashed so duplicated corners move together (no torn seams).
 function _chip(geo, amt) {
   const p = geo.attributes.position;
+  const seed = rand(0, 100);
   for (let i = 0; i < p.count; i++) {
-    p.setX(i, p.getX(i) + rand(-amt, amt));
-    p.setY(i, p.getY(i) + rand(-amt, amt));
-    p.setZ(i, p.getZ(i) + rand(-amt, amt));
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    const h = (k) => {
+      const t = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719 + seed + k * 51.7) * 43758.5453;
+      return (t - Math.floor(t)) - 0.5;
+    };
+    p.setXYZ(i, x + h(1) * 2 * amt, y + h(2) * 2 * amt, z + h(3) * 2 * amt);
   }
   p.needsUpdate = true;
   geo.computeVertexNormals();

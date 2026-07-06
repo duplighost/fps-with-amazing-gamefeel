@@ -67,3 +67,13 @@ export function caveCeilY(x, z) {
 export function isUnder(x, z, y) {
   return caveSDF(x, z) < 0 && y < caveCeilY(x, z) + 0.4;
 }
+
+// inside a sinkhole crater's open mouth (no rock to clip through here — the
+// funnel walls are ordinary walkable terrain, so wall clamps must stand down)
+export function inCraterMouth(x, z) {
+  for (const e of ENTRANCES) {
+    const dx = x - e.x, dz = z - e.z;
+    if (dx * dx + dz * dz < (ENTRANCE_CARVE + 1.5) * (ENTRANCE_CARVE + 1.5)) return true;
+  }
+  return false;
+}

@@ -10,7 +10,8 @@ import { buildFoliage } from './foliage.js';
 import { buildPlatforms } from './platforms.js';
 import { buildCave } from './cave.js';
 import { buildLandmarks } from './landmarks.js';
-import { POND, WATER_Y, inPond, ENTRANCES, caveSDF } from './layout.js';
+import { buildTreeHouse } from './tree.js';
+import { POND, WATER_Y, inPond, ENTRANCES, caveSDF, inCraterMouth } from './layout.js';
 import { rand, lerp, clamp01, damp } from '../engine/math.js';
 
 const degToRad = THREE.MathUtils.degToRad;
@@ -65,6 +66,9 @@ export function buildWorld(scene, renderer) {
   const landmarks = buildLandmarks(scene, terrain);
   foliage.colliders.push(...landmarks.colliders);      // stones block walkers too
   platforms.platforms.push(...landmarks.tops);         // lintels/arch/slab are stand-able
+  const tree = buildTreeHouse(scene, terrain);
+  foliage.colliders.push(...tree.colliders);           // trunk blocks (surface only)
+  platforms.platforms.push(...tree.tops);              // branches/deck/crown are stand-able
   const mountains = buildMountains(scene);
   const clouds = buildClouds(scene);
   const fireflies = buildFireflies(scene, terrain);
@@ -126,6 +130,7 @@ export function buildWorld(scene, renderer) {
     terrain.setSeason(season);
     // foliage colours
     seasonCol(foliage.mats.canopy.color, FOL.canopy, season);
+    foliage.mats.canopyCore.color.copy(foliage.mats.canopy.color).multiplyScalar(0.66);
     seasonCol(foliage.mats.bush.color, FOL.bush, season);
     seasonCol(foliage.mats.trunk.color, FOL.trunk, season);
     seasonCol(foliage.mats.rock.color, FOL.rock, season);
@@ -135,6 +140,7 @@ export function buildWorld(scene, renderer) {
     platforms.setSeason(season);
     // distant scenery cools with the year
     mountains.setSeason(season, haunt);
+    tree.setSeason(season, haunt);
     clouds.setSeason(season, haunt);
     fireflies.setFade((1 - clamp01(season * 1.25)) * (1 - haunt * 0.4));
     // particles: pollen motes give way to snow (a boss can force the storm harder)
@@ -168,12 +174,13 @@ export function buildWorld(scene, renderer) {
     terrain,
     colliders: foliage.colliders,
     platforms: platforms.platforms,
-    nook: platforms.nook,
-    solids: [terrain.mesh, ...foliage.solids, ...platforms.solids, ...cave.solids, ...landmarks.solids],
+    nook: tree.nook,
+    solids: [terrain.mesh, ...foliage.solids, ...platforms.solids, ...cave.solids, ...landmarks.solids, ...tree.solids],
     sun,
     sunDir,
     playRadius: terrain.playRadius,
     groundAt,
+    inCrater: inCraterMouth,
     surfaceAt,
     caveSDF,
     isUnder: terrain.isUnder,
@@ -187,6 +194,7 @@ export function buildWorld(scene, renderer) {
       pondTime += dt; pond.update(pondTime);
       clouds.update(dt);
       fireflies.update(dt, pondTime);
+      cave.update(pondTime);
       if (foliage.mats.grass._shader) foliage.mats.grass._shader.uniforms.uTime.value = pondTime;
       const target = terrain.isUnder(playerPos.x, playerPos.z, playerPos.y + 0.6) ? 1 : 0;
       underT = damp(underT, target, 3.2, dt);

@@ -975,9 +975,38 @@ export class Enemy {
     this._muzzleZ = built.muzzleZ || 0;
     // for flyers (body-centred), the local Y above which a hit counts as a headshot
     this._headHitY = built.headHitY || 0;
+    this._addVeins();
     this.group.position.copy(this.pos);
     this.group.scale.setScalar(0.01);
     mgr.scene.add(this.group);
+  }
+
+  // MAGMA VEINS: every grounded creature carries glowing cracks in its hide,
+  // in its signature accent colour — so the horde reads at a glance even in
+  // fog, NIGHTFALL waves, or the underground dark.
+  _addVeins() {
+    if (this.def.flyer) return;   // ravens are already lit by their wing edges
+    const anchor = this.parts.pelvis || this.group;
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x0a0a12, emissive: this.def.accent, emissiveIntensity: 3.2, roughness: 0.4, flatShading: true,
+    });
+    const big = this.def.radius >= 0.9;
+    const n = big ? 5 : 3;
+    const rr = this.def.radius * 0.6;
+    const spanY = Math.max(0.5, this.def.height * 0.3);
+    for (let i = 0; i < n; i++) {
+      const a = rand(0, Math.PI * 2);
+      const crack = new THREE.Mesh(new THREE.BoxGeometry(0.055, rand(0.3, 0.3 + spanY * 0.7), 0.055), mat);
+      crack.position.set(Math.cos(a) * rr, rand(-0.1, spanY), Math.sin(a) * rr);
+      crack.rotation.set(rand(-0.4, 0.4), a, rand(-0.5, 0.5));
+      anchor.add(crack);
+    }
+    // a molten droplet running down from one of the cracks
+    const drip = new THREE.Mesh(new THREE.OctahedronGeometry(0.07, 0), mat);
+    const da = rand(0, Math.PI * 2);
+    drip.position.set(Math.cos(da) * rr, -0.05, Math.sin(da) * rr);
+    anchor.add(drip);
+    this.materials.push(mat);
   }
 
   // Turn this enemy into an ELITE: aura-tinted, crowned with an orbiting shard,
@@ -1222,7 +1251,10 @@ export class Enemy {
       this.pos.y = this.flyY;
     } else {
       // underground walkers can't phase out through the cave walls either
-      if (this.underground && this.mgr.world && this.mgr.world.caveSDF) {
+      // (but inside a sinkhole crater the funnel is ordinary open terrain —
+      // clamping there walled off the way OUT and pinned enemies in the hole)
+      if (this.underground && this.mgr.world && this.mgr.world.caveSDF &&
+          !(this.mgr.world.inCrater && this.mgr.world.inCrater(this.pos.x, this.pos.z))) {
         const d = this.mgr.world.caveSDF(this.pos.x, this.pos.z);
         if (d > -0.6) {
           const e2 = 0.4;
@@ -1238,6 +1270,18 @@ export class Enemy {
       if (this.mgr.world && this.mgr.world.surfaceAt) {
         const inW = this.mgr.world.surfaceAt(this.pos.x, this.pos.z, this.pos.y) === 'water';
         if (inW !== this._inWater) { this._inWater = inW; this.mgr.audio.splash(this.mgr.panFor(this.pos)); }
+      }
+    }
+
+    // stall watchdog: a far-away walker that hasn't actually moved for ~9s is
+    // wedged on SOMETHING (whatever the cause) — quietly re-drop it at the
+    // arena edge so the horde never dribbles away into stuck stragglers.
+    if (!this.boss && this.spawnT >= 1 && this.frozenT <= 0 && this._stunT <= 0) {
+      this._stallRef = this._stallRef || this.pos.clone();
+      if (this.pos.distanceToSquared(this._stallRef) > 2.25) { this._stallRef.copy(this.pos); this._stallT = 0; }
+      else if ((this._stallT = (this._stallT || 0) + dt) > 9 && pdist > 22) {
+        this.mgr.relocate(this);
+        this._stallRef.copy(this.pos); this._stallT = 0;
       }
     }
 
@@ -1518,19 +1562,33 @@ export class Enemy {
     const pUnder = this.mgr.playerUnder;
     const meUnder = w.isUnder(this.pos.x, this.pos.z, this.pos.y + 0.5);
     this.underground = meUnder;
-    if (this.def.flyer) return pUnder ? this._nearestEntrance(player) : player.pos;
+    if (this.def.flyer) return pUnder ? this._nearestEntrance(player.pos) : player.pos;
     if (pUnder === meUnder) return player.pos;
-    return this._nearestEntrance(player);
+    if (meUnder) {
+      // heading UP: aim for the hole nearest to ME (not the player — that can
+      // be across the map), and once inside its shaft keep walking OUT past
+      // the crater rim on the player's side. Standing at the bottom of the
+      // bowl "arrived at the entrance" was how enemies got stuck in holes.
+      const e = this._nearestEntrance(this.pos);
+      const dx = this.pos.x - e.x, dz = this.pos.z - e.z;
+      if (dx * dx + dz * dz < 100) {
+        let ox = player.pos.x - e.x, oz = player.pos.z - e.z;
+        const L = Math.hypot(ox, oz) || 1;
+        this._ent.set(e.x + (ox / L) * 17, 0, e.z + (oz / L) * 17);
+      }
+      return this._ent;
+    }
+    return this._nearestEntrance(player.pos);
   }
-  _nearestEntrance(player) {
+  _nearestEntrance(ref) {
     const w = this.mgr.world;
     let best = w.entrances[0], bd = Infinity;
     for (const e of w.entrances) {
-      const d = Math.hypot(e.x - player.pos.x, e.z - player.pos.z);
+      const d = Math.hypot(e.x - ref.x, e.z - ref.z);
       if (d < bd) { bd = d; best = e; }
     }
     this._ent.set(best.x, 0, best.z);
-    return this._ent;
+    return best;
   }
 
   // Encased in the pond's ice: held solid, tinted frost, brittle to damage.
@@ -2006,6 +2064,25 @@ export class EnemyManager {
     if (this.onCountChange) this.onCountChange(this.aliveCount());
   }
 
+  // re-drop a wedged enemy at a sensible fresh spot: near the player's layer
+  // entrance if they're underground, else at the arena edge (out in the fog)
+  relocate(e) {
+    let x, z, y;
+    if (this.playerUnder && this.world.entrances) {
+      const ent = pick(this.world.entrances);
+      x = ent.x * 0.55 + rand(-1.5, 1.5); z = ent.z * 0.55 + rand(-1.5, 1.5); y = -13;
+    } else {
+      const a = rand(0, Math.PI * 2), r = this.boundary * rand(0.85, 0.96);
+      x = this.player.pos.x + Math.cos(a) * r; z = this.player.pos.z + Math.sin(a) * r;
+      const dr = Math.hypot(x, z);
+      if (dr > this.boundary - 2) { const k = (this.boundary - 2) / dr; x *= k; z *= k; }
+      y = this.terrain.height(x, z);
+    }
+    this.fx.debris.emit(e.pos.x, e.pos.y + 0.6, e.pos.z, 0, 1.5, 0, 0.8, 0.4, 0.35, 0.3, 0.14, 8, 3);
+    e.pos.set(x, y, z);
+    e.vel.set(0, 0, 0); e.knockback.set(0, 0, 0);
+  }
+
   clampPoint(x, z) {
     const dr = Math.hypot(x, z), b = this.boundary - 2;
     if (dr > b) { const k = b / dr; x *= k; z *= k; }
@@ -2103,6 +2180,8 @@ export class EnemyManager {
 
   collideEnemy(e, r) {
     for (const c of this.colliders) {
+      if (c.yMin !== undefined && e.pos.y < c.yMin) continue;
+      if (c.yMax !== undefined && e.pos.y > c.yMax) continue;
       const dx = e.pos.x - c.x, dz = e.pos.z - c.z;
       const min = c.r + r; const d2 = dx * dx + dz * dz;
       if (d2 < min * min && d2 > 1e-5) { const d = Math.sqrt(d2); e.pos.x = c.x + dx / d * min; e.pos.z = c.z + dz / d * min; }

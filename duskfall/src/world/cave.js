@@ -20,8 +20,10 @@ function buildSheet(scene, sampleY, isCeil) {
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), z = pos.getZ(i);
     const sdf = caveSDF(x, z);
-    // outside the region both sheets collapse to the ceiling (buried, invisible)
-    const y = sdf >= 0.4 ? caveCeilY(x, z) : sampleY(x, z);
+    // outside the region both sheets collapse and stay a meter UNDER the
+    // surface — including under the crater bowls, where collapsing to the
+    // ceiling height used to poke black shards up through the funnel walls
+    const y = sdf >= 0.4 ? Math.min(caveCeilY(x, z), terrainHeight(x, z) - 1.2) : sampleY(x, z);
     pos.setY(i, y);
     const depth = clamp01(-sdf / 8);
     col.copy(rock).lerp(rock2, ((x * 13.37 + z * 7.77) % 1 + 1) % 1 * 0.5).lerp(cold, depth * 0.4);
@@ -129,23 +131,51 @@ export function buildCave(scene) {
   // a warm glow up each shaft so the way in/out reads from both sides
   for (const e of ENTRANCES) mk(e.x, e.z, 0xffb050, 42, 22, -8);
 
-  // surface beacons: a broken ring of ember stones around each crater rim
+  // surface beacons: every crater rim is RINGED in fire so the way down reads
+  // from across the whole field — tall ember fangs, a warm rim light, and a
+  // soft amber column rising out of the hole like heat-glow off a furnace
+  const pillarMat = new THREE.MeshBasicMaterial({
+    color: 0xff9a4a, transparent: true, opacity: 0.13, blending: THREE.AdditiveBlending,
+    depthWrite: false, side: THREE.DoubleSide, fog: false,
+  });
+  const pillars = [];
   for (const e of ENTRANCES) {
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2 + e.a;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + e.a;
       const rx = e.x + Math.cos(a) * (ENTRANCE_CARVE - 0.5), rz = e.z + Math.sin(a) * (ENTRANCE_CARVE - 0.5);
-      const st = new THREE.Mesh(new THREE.OctahedronGeometry(0.3 + (i % 3) * 0.12, 0), emberMat);
-      st.position.set(rx, terrainHeight(rx, rz) + 0.28, rz);
-      st.rotation.set(i, i * 2.1, 0);
+      const tall = i % 2 === 0;
+      const st = new THREE.Mesh(
+        tall ? new THREE.ConeGeometry(0.34, 1.9, 5) : new THREE.OctahedronGeometry(0.3 + (i % 3) * 0.12, 0),
+        emberMat);
+      st.position.set(rx, terrainHeight(rx, rz) + (tall ? 0.85 : 0.28), rz);
+      st.rotation.set(tall ? 0 : i, i * 2.1, tall ? 0.12 : 0);
       group.add(st);
     }
+    // the glow column out of the shaft
+    const rimY = terrainHeight(e.x + ENTRANCE_CARVE, e.z);
+    const pil = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 4.2, 26, 10, 1, true), pillarMat.clone());
+    pil.position.set(e.x, rimY + 4, e.z);
+    group.add(pil); pillars.push(pil);
+    // a warm light AT the mouth, always on — lights the bowl walls day + night
+    const rl = new THREE.PointLight(0xff9a4a, 42, 26, 1.7);
+    rl.position.set(e.x, rimY + 2.5, e.z);
+    rl.userData.rim = true;
+    scene.add(rl); lights.push(rl);
   }
 
   return {
     solids: [floor, ceil],
     // lights swell as the player descends (they're mostly wasted on the surface)
     setUnderground(u) {
-      for (const l of lights) l.intensity = l.userData.base * (0.2 + 0.8 * u);
+      for (const l of lights) {
+        if (l.userData.rim) continue;   // rim beacons burn day and night
+        l.intensity = l.userData.base * (0.2 + 0.8 * u);
+      }
+    },
+    update(t) {
+      for (let i = 0; i < pillars.length; i++) {
+        pillars[i].material.opacity = 0.11 + Math.sin(t * 1.3 + i * 1.7) * 0.035;
+      }
     },
   };
 }

@@ -103,10 +103,12 @@ class Game {
     this.controller.isUnderFn = this.world.isUnder;
     this.controller.surfaceProbe = this.world.surfaceAt;
     this.controller.caveSDFFn = this.world.caveSDF;
+    this.controller.inCraterFn = this.world.inCrater;
     this.pickups.groundAt = this.world.groundAt;
     this.projectiles.groundAt = this.world.groundAt;
     this._pondWasFrozen = false;
     this._meteors = [];            // wurm-wave surface strikes [{x,z,y,t}]
+    this._voids = [];              // live void orbs [{pos,t,spin}]
     this._meteorCd = 1; this._surgeCd = 0.5;
     this._chillT = 0;              // frost-elite slow
     this._mutNight = 0; this._mutFog = 0;   // damped mutator moods
@@ -327,6 +329,7 @@ class Game {
     this.season = 0; this._stormBoost = 0; this.world.setSeason(0, 0, 0);   // back to summer
     this._pondWasFrozen = this.world.pond.frozen;
     this._meteors.length = 0; this._meteorCd = 1; this._surgeCd = 0.5;
+    this._voids.length = 0;
     this._dashHitSet.clear(); this._dashPin = null; this._dashAge = 0;
     this.fx.trauma = 0; this.fx.hitstop = 0; this.fx.slowmo = 1;
     this._chillT = 0; this.controller.speedMult = 1;
@@ -494,6 +497,7 @@ class Game {
       this.hud.setAim(this.cam.aimT);
       this.hud.setDash(this.controller.dashCharges, this.controller.maxDashCharges, this.controller.dashRechargeRatio, this.controller.isDashing());
       this.weapons.update(realDt, this.controller, this.input);
+      this._updateVoids(gdt);
       this._grenadeCd = Math.max(0, this._grenadeCd - realDt);
       if (this.input.wasPressed('grenade')) this._throwGrenade();
       this.pickups.update(realDt, this.controller.pos);
@@ -707,7 +711,86 @@ class Game {
     }
   }
 
-  // Lob a grenade along the aim with a slight arc. Powerful AoE, no self-damage.
+  // THE VOID ORB. The thrown orb blooms into a singularity: for ~2 seconds it
+  // drags every non-boss enemy in a wide radius into one screaming knot
+  // (holding them helpless), then detonates the packed ball. Crowd control AND
+  // a crowd-execution — it sets up shotgun blasts and dash skewers instead of
+  // competing with them. It still never hurts the player.
+  _openVoid(at) {
+    at.y = Math.max(at.y, this.world.groundAt(at.x, at.z, at.y) + 1.7);
+    this._voids.push({ pos: at, t: 2.05, spin: Math.random() * 6 });
+    this.fx.shockwave(at, 0xba7bff, 12, 0.55);
+    this.fx.impactLight(at, 0x9a5aff, 30, 0.5);
+    this.audio.seerCharge(0);
+    this.fx.addTrauma(0.25);
+  }
+
+  _updateVoids(dt) {
+    if (!this._voids.length) return;
+    const PULL_R = 17;
+    for (const v of this._voids) {
+      v.t -= dt; v.spin += dt * 9;
+      // the maw: a slow strobe of collapsing rings + orbiting motes
+      if (!v._ring || v._ring <= 0) { v._ring = 0.34; this.fx.shockwave(v.pos, 0xba7bff, 5.2, 0.3); }
+      v._ring -= dt;
+      this.fx.impactLight(v.pos, 0x8a4aff, 16, 0.08);
+      for (let k = 0; k < 3; k++) {
+        const a = v.spin + k * 2.09, rr = 2.6 + Math.sin(v.spin * 1.7 + k) * 1.1;
+        this.fx.debris.emit(v.pos.x + Math.cos(a) * rr, v.pos.y + Math.sin(v.spin * 2.3 + k) * 1.2, v.pos.z + Math.sin(a) * rr,
+          -Math.sin(a) * 6, 0, Math.cos(a) * 6, 0.72, 0.48, 1.0, 0.2, 0.14, 0, 2);
+      }
+      // THE PULL: drag every non-boss enemy toward the maw; held enemies reel
+      for (const e of this.enemies.enemies) {
+        if (!e.alive || e.boss || e.frozenT > 0) continue;
+        const dx = v.pos.x - e.pos.x, dz = v.pos.z - e.pos.z;
+        const d = Math.hypot(dx, dz) || 0.001;
+        if (d > PULL_R) continue;
+        const heavy = e.def.gait === 'stomp' ? 0.35 : 1;   // megaliths barely budge
+        const pull = 24 * heavy * clamp01(1.2 - d / PULL_R);
+        e.pos.x += (dx / d) * Math.min(pull * dt, d);
+        e.pos.z += (dz / d) * Math.min(pull * dt, d);
+        if (e.def.flyer) { e.flyY = damp(e.flyY, v.pos.y, 3.5, dt); e.pos.y = e.flyY; }
+        else if (d < 5 && heavy === 1) e.pos.y = damp(e.pos.y, v.pos.y - 0.9, 3.0, dt);   // lifted, flailing
+        else e.pos.y = this.enemies.groundFor(e.pos.x, e.pos.z, e.pos.y);
+        e._stunT = Math.max(e._stunT, 0.14);              // held: can't walk or swing
+        e.knockback.set(0, 0, 0);
+      }
+      if (v.t <= 0) this._detonateVoid(v);
+    }
+    this._voids = this._voids.filter((v) => v.t > 0);
+  }
+
+  _detonateVoid(v) {
+    const at = v.pos, R = 10;
+    this.fx.shockwave(at.clone(), 0xd9a9ff, R + 3, 0.6);
+    this.fx.shockwave(at.clone(), 0xba7bff, R * 0.6, 0.4);
+    this.fx.impactLight(at.clone(), 0xc07bff, 40, 0.35);
+    this.fx.addTrauma(0.85); this.fx.addHitstop(0.09);
+    for (let k = 0; k < 48; k++) {
+      const a = Math.random() * Math.PI * 2, el = Math.random() * Math.PI * 0.6, sp = 6 + Math.random() * 14;
+      this.fx.debris.emit(at.x, at.y, at.z, Math.cos(a) * Math.cos(el) * sp, Math.sin(el) * sp, Math.sin(a) * Math.cos(el) * sp,
+        0.78, 0.55, 1.0, 0.4 + Math.random() * 0.4, 0.16 + Math.random() * 0.24, 14, 2.4);
+    }
+    this.audio.grenadeExplode(0);
+    const dirV = new THREE.Vector3();
+    const hurt = (e) => {
+      if (!e || !e.alive) return;
+      const cy = e.pos.y + e.def.height * 0.5;
+      const d = Math.hypot(e.pos.x - at.x, cy - at.y, e.pos.z - at.z) - e.def.radius;
+      if (d > R) return;
+      const fall = clamp01(1 - d / R);
+      dirV.set(e.pos.x - at.x, 0, e.pos.z - at.z);
+      if (dirV.lengthSq() < 1e-5) dirV.set(0, 0, 1); else dirV.normalize();
+      e.knockback.addScaledVector(dirV, e.def.gait === 'stomp' ? 3 : 10);
+      e.knockback.y += 4;
+      e.takeDamage(340 * (0.4 + 0.6 * fall), new THREE.Vector3(e.pos.x, cy, e.pos.z), dirV, false);
+    };
+    // bosses aren't pulled, but standing in the blast still costs them
+    if (this.enemies.boss) hurt(this.enemies.boss);
+    for (const e of this.enemies.enemies.slice()) if (e !== this.enemies.boss) hurt(e);
+  }
+
+  // Lob the void orb along the aim with a slight arc.
   _throwGrenade() {
     if (this.grenades <= 0 || this._grenadeCd > 0) return;
     this.grenades--;
@@ -731,6 +814,7 @@ class Game {
       enemies: this.enemies,
       boss: this.enemies.boss,
       onHitPlayer: (dmg, pos) => this.playerTakeDamage(dmg, pos),
+      onVoidOpen: (at) => this._openVoid(at),
       onReflect: (pos) => {
         this.hud.hitMarker(false, false);
         this.score += 40; this.hud.setScore(this.score);
