@@ -243,6 +243,11 @@ export class Controller {
       if (!wasGround && fallSpeed > 1.6) ev.landed = clamp01((fallSpeed - 1.6) / 11);
       this.pos.y = groundH; this.vel.y = 0; this.onGround = true;
       this._airJumps = 0;
+      // treehouse deck railings: while you're standing on a railed deck, its
+      // edge stops you from strolling off (so you can turn + shoot up there),
+      // EXCEPT through the doorways facing its bridges. Jumping lifts you off
+      // the deck (onGround false) so deliberate leaps are never blocked.
+      if (this._groundPlat && this._groundPlat.rail) this._railClamp(this._groundPlat);
     } else {
       this.onGround = false;
     }
@@ -292,11 +297,32 @@ export class Controller {
   // giving classic one-way platforms (jump up through, land coming down).
   groundHeight(x, z, footY) {
     let g = this.groundFn ? this.groundFn(x, z, footY) : this.terrain.height(x, z);
+    let plat = null;
     for (const p of this.platforms) {
       const dx = x - p.x, dz = z - p.z;
-      if (dx * dx + dz * dz <= p.r * p.r && p.y > g && footY >= p.y - PLATFORM_GRACE) g = p.y;
+      if (dx * dx + dz * dz <= p.r * p.r && p.y > g && footY >= p.y - PLATFORM_GRACE) { g = p.y; plat = p; }
     }
+    this._groundPlat = plat;
     return g;
+  }
+
+  // Keep the player on a railed deck: push them back inside the rim and cancel
+  // outward speed, unless they're heading out through a bridge doorway (a gap
+  // angle stored on p.rail). Only runs while grounded — a jump clears the deck.
+  _railClamp(p) {
+    const dx = this.pos.x - p.x, dz = this.pos.z - p.z;
+    const d = Math.hypot(dx, dz);
+    const lim = p.r - 0.45;
+    if (d <= lim || d < 1e-4) return;
+    const ang = Math.atan2(dz, dx);
+    for (const gp of p.rail) {
+      let da = Math.abs(ang - gp); if (da > Math.PI) da = Math.PI * 2 - da;
+      if (da < 0.5) return;   // in a doorway — let them walk out onto the bridge
+    }
+    this.pos.x = p.x + (dx / d) * lim;
+    this.pos.z = p.z + (dz / d) * lim;
+    const outv = (this.vel.x * dx + this.vel.z * dz) / d;
+    if (outv > 0) { this.vel.x -= outv * (dx / d); this.vel.z -= outv * (dz / d); }
   }
 
   // If the player is pressed against the SIDE of a sky-island just below its top,

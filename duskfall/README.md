@@ -72,11 +72,15 @@ a photo. The whole scene is generated at load, then run through a filmic camera:
   deck** holding the **loot cage** (drops from fights below still funnel up into
   it), and the canopy above is a high perch. Nothing floats unsupported any
   more — every platform in the sky hangs off this tree.
-- **THREE LAYERS.** The world is a sandwich now. **The sky**: an irregular closed
-  **canopy-walk** of wooden branch-pads rings the arena, carried on huge limbs
-  that all reach back to the great tree; four of those limbs are walkable
-  **cross-branches** that cut through the crown hub, so you can travel across
-  the circle instead of running the loop.
+- **THREE LAYERS.** The world is a sandwich now. **The sky**: a **canopy
+  village** strung through the great tree — a loose, irregular ring of big flat
+  plank **decks** (each braced by a limb from the trunk and a support post to
+  the ground, so nothing floats) joined to each other and back to the tree by
+  rope-and-plank **bridges**. The decks have **railings** so you can plant your
+  feet and shoot without stumbling off the edge — but the railing opens into a
+  doorway wherever a bridge meets it, and a jump or air-dash always clears it,
+  so deliberate leaps are never blocked. Walk the loop, cross a bridge to cut
+  through the middle, or air-dash between decks.
   **The surface**: real rolling hills and a pond you wade through — which freezes
   into slippery ice in deep winter (with a freeze set-piece that encases anything
   caught wading). **The underground**: four sinkhole craters funnel down into
@@ -159,7 +163,10 @@ Game feel is the sum of a hundred small responses. The big ones here:
   screaming, helpless knot — floated off their feet — and then **detonates the
   packed ball**. It's a panic button when you're cornered *and* a combo setup:
   vacuum the pack, then meet it with a shotgun blast or a dash-skewer. It still
-  **never hurts you**. Refilled by rare drops; a HUD counter tracks them.
+  **never hurts you**. Refilled by rare drops; a HUD counter tracks them. (The
+  vortex used to stutter on weaker machines — its flash-lights were toggling
+  visibility every frame, which forces the renderer to recompile every material;
+  the pooled lights now hold a constant count, so it runs smooth.)
 - **Roguelite upgrades** — clear a wave and the field freezes for a **choice of three
   stacking upgrades**. Odd waves boost capacity (max health / slow-mo duration / max
   ammo); even waves boost your **drop rates** (ammo / health / grenades). A run compounds.

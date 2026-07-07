@@ -200,8 +200,11 @@ export class FX {
     // muzzle / impact flash lights
     this.flashLights = [];
     for (let i = 0; i < 6; i++) {
+      // NOTE: kept permanently visible at intensity 0 when idle. Toggling a
+      // light's .visible changes the scene's active light COUNT, which forces
+      // three.js to recompile every lit material — a per-frame stutter storm
+      // when many flashes fire (e.g. the void orb). Constant count = no recompiles.
       const l = new THREE.PointLight(0xffd27f, 0, 14, 2);
-      l.visible = false;
       scene.add(l);
       this.flashLights.push({ light: l, life: 0, maxLife: 0.06, power: 8 });
     }
@@ -346,7 +349,6 @@ export class FX {
     f.light.color.setHex(colorHex);
     f.power = power;
     f.light.intensity = power;
-    f.light.visible = true;
     f.life = life;
     f.maxLife = life;
   }
@@ -407,7 +409,7 @@ export class FX {
       if (f.life > 0) {
         f.life -= realDt;
         f.light.intensity = f.power * clamp01(f.life / f.maxLife);
-        if (f.life <= 0) f.light.visible = false;
+        if (f.life <= 0) f.light.intensity = 0;
       }
     }
     for (const r of this.rings) {

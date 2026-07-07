@@ -730,15 +730,22 @@ class Game {
     const PULL_R = 17;
     for (const v of this._voids) {
       v.t -= dt; v.spin += dt * 9;
-      // the maw: a slow strobe of collapsing rings + orbiting motes
-      if (!v._ring || v._ring <= 0) { v._ring = 0.34; this.fx.shockwave(v.pos, 0xba7bff, 5.2, 0.3); }
-      v._ring -= dt;
-      this.fx.impactLight(v.pos, 0x8a4aff, 16, 0.08);
-      for (let k = 0; k < 3; k++) {
-        const a = v.spin + k * 2.09, rr = 2.6 + Math.sin(v.spin * 1.7 + k) * 1.1;
-        this.fx.debris.emit(v.pos.x + Math.cos(a) * rr, v.pos.y + Math.sin(v.spin * 2.3 + k) * 1.2, v.pos.z + Math.sin(a) * rr,
-          -Math.sin(a) * 6, 0, Math.cos(a) * 6, 0.72, 0.48, 1.0, 0.2, 0.14, 0, 2);
+      // the maw: one steady glow light (held on the pooled flash lights below)
+      // + a collapsing ring and a few orbiting motes a few times a second. This
+      // is deliberately NOT every-frame — the spinning debris sells the vortex.
+      v._fx = (v._fx || 0) - dt;
+      if (v._fx <= 0) {
+        v._fx = 0.12;
+        this.fx.shockwave(v.pos, 0xba7bff, 5.2, 0.28);
+        for (let k = 0; k < 3; k++) {
+          const a = v.spin + k * 2.09, rr = 2.6 + Math.sin(v.spin * 1.7 + k) * 1.1;
+          this.fx.debris.emit(v.pos.x + Math.cos(a) * rr, v.pos.y + Math.sin(v.spin * 2.3 + k) * 1.2, v.pos.z + Math.sin(a) * rr,
+            -Math.sin(a) * 6, 0, Math.cos(a) * 6, 0.72, 0.48, 1.0, 0.22, 0.14, 0, 2);
+        }
       }
+      // keep the maw lit with a single steady light (life just over the refresh
+      // cadence so it never blinks) rather than a flash every frame
+      this.fx.impactLight(v.pos, 0x8a4aff, 15, 0.16);
       // THE PULL: drag every non-boss enemy toward the maw; held enemies reel
       for (const e of this.enemies.enemies) {
         if (!e.alive || e.boss || e.frozenT > 0) continue;
