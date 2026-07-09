@@ -4,11 +4,28 @@
 // living hollow instead of a black void.
 
 import * as THREE from 'three';
-import { rand, clamp01 } from '../engine/math.js';
-import { caveSDF, caveFloorY, caveCeilY, CAVERN_R, ENTRANCES, ENTRANCE_CARVE } from './layout.js';
+import { rand, clamp01, lerp } from '../engine/math.js';
+import { caveSDF, caveFloorY, caveCeilY, CAVERN_R, ENTRANCES, ENTRANCE_CARVE, TUNNEL_FLOOR } from './layout.js';
 import { terrainHeight } from './terrain.js';
 
 const EXTENT = 52, RES = 110;
+
+// bevel-ish vertex noise so portal blocks read as worked stone, not boxes.
+// Position-hashed so duplicated corners move together (no torn seams).
+function _chip(geo, amt) {
+  const p = geo.attributes.position;
+  const seed = rand(0, 100);
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    const h = (k) => {
+      const t = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719 + seed + k * 51.7) * 43758.5453;
+      return (t - Math.floor(t)) - 0.5;
+    };
+    p.setXYZ(i, x + h(1) * 2 * amt, y + h(2) * 2 * amt, z + h(3) * 2 * amt);
+  }
+  p.needsUpdate = true;
+  geo.computeVertexNormals();
+}
 
 function buildSheet(scene, sampleY, isCeil) {
   const geo = new THREE.PlaneGeometry(EXTENT * 2, EXTENT * 2, RES, RES);
@@ -131,6 +148,74 @@ export function buildCave(scene) {
   // a warm glow up each shaft so the way in/out reads from both sides
   for (const e of ENTRANCES) mk(e.x, e.z, 0xffb050, 42, 22, -8);
 
+  // --- ENTRANCE PORTALS: build each sinkhole into an obvious DOORWAY. A heavy
+  // stone archway faces the arena, a carved ring of blocks lips the mouth, stone
+  // steps descend on the near side, and two torches flank the arch — so from the
+  // field it reads "go down here," not "there's a random pit."
+  const portalStone = new THREE.MeshStandardMaterial({ color: 0x6a6f68, roughness: 0.95, metalness: 0.03, flatShading: true });
+  const portalDark = new THREE.MeshStandardMaterial({ color: 0x474b46, roughness: 0.95, metalness: 0.03, flatShading: true });
+  const torchHeadMat = new THREE.MeshStandardMaterial({ color: 0x0a0a08, emissive: 0xffb24a, emissiveIntensity: 2.6, roughness: 0.5, flatShading: true });
+  const glyphMat = new THREE.MeshStandardMaterial({ color: 0x0a0c14, emissive: 0xffb24a, emissiveIntensity: 2.2, roughness: 0.4, flatShading: true });
+  const portalColliders = [];
+  for (const e of ENTRANCES) {
+    const toC = Math.atan2(-e.z, -e.x);        // from the hole toward map centre
+    const cx = Math.cos(toC), cz = Math.sin(toC);
+    const px2 = -cz, pz2 = cx;                  // perpendicular (the arch spans this)
+    const rimR = ENTRANCE_CARVE - 0.3;
+    // a ring of chunky rim stones circling the mouth (a made kerb, not a pit)
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      const rx = e.x + Math.cos(a) * rimR, rz = e.z + Math.sin(a) * rimR;
+      const h = 0.6 + ((i * 7) % 3) * 0.28;
+      const blk = new THREE.Mesh(new THREE.BoxGeometry(1.5, h, 1.2), i % 2 ? portalDark : portalStone);
+      _chip(blk.geometry, 0.1);
+      blk.position.set(rx, terrainHeight(rx, rz) + h * 0.4, rz);
+      blk.rotation.y = a; blk.castShadow = true; blk.receiveShadow = true;
+      group.add(blk);
+    }
+    // the archway: two leaning pillars + a lintel on the centre-facing side
+    for (const s of [-1, 1]) {
+      const bx = e.x + cx * (rimR + 0.6) + px2 * s * 2.6;
+      const bz = e.z + cz * (rimR + 0.6) + pz2 * s * 2.6;
+      const gy = terrainHeight(bx, bz), ph = 5.4;
+      const pil = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 1.0, ph, 6), portalStone);
+      _chip(pil.geometry, 0.16);
+      pil.position.set(bx, gy + ph / 2 - 0.3, bz);
+      pil.rotation.z = -s * 0.12;                // lean together
+      pil.castShadow = true; pil.receiveShadow = true;
+      group.add(pil);
+      portalColliders.push({ x: bx, z: bz, r: 1.1 });
+      // a torch on each pillar (bright head + a warm light, always burning)
+      const th = new THREE.Mesh(new THREE.IcosahedronGeometry(0.34, 0), torchHeadMat);
+      th.position.set(bx, gy + ph - 0.2, bz); group.add(th);
+      const tl = new THREE.PointLight(0xffb24a, 30, 16, 1.8);
+      tl.position.set(bx, gy + ph, bz);
+      tl.userData.rim = true; tl.userData.base = 30;
+      scene.add(tl); lights.push(tl);
+    }
+    // the lintel bridging the pillars, overhead, with a glowing keystone rune
+    const lx = e.x + cx * (rimR + 0.6), lz = e.z + cz * (rimR + 0.6);
+    const lgy = terrainHeight(lx, lz);
+    const lintel = new THREE.Mesh(new THREE.BoxGeometry(6.4, 1.0, 1.4), portalDark);
+    _chip(lintel.geometry, 0.12);
+    lintel.position.set(lx, lgy + 5.0, lz);
+    lintel.rotation.y = toC + Math.PI / 2;
+    lintel.castShadow = true; group.add(lintel);
+    const glyph = new THREE.Mesh(new THREE.OctahedronGeometry(0.34, 0), glyphMat);
+    glyph.position.set(lx + cx * 0.75, lgy + 5.0, lz + cz * 0.75); group.add(glyph);
+    // descending stone steps on the centre-facing side, down into the mouth
+    const rimTopY = terrainHeight(e.x + cx * rimR, e.z + cz * rimR);
+    for (let i = 0; i < 4; i++) {
+      const t = 0.28 + i * 0.16;
+      const sx = e.x + cx * rimR * (1 - t), sz = e.z + cz * rimR * (1 - t);
+      const sy = lerp(rimTopY, TUNNEL_FLOOR + 1, t / 0.76);
+      const step = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.4, 1.3), i % 2 ? portalStone : portalDark);
+      step.position.set(sx, sy, sz);
+      step.rotation.y = toC + Math.PI / 2;
+      step.receiveShadow = true; group.add(step);
+    }
+  }
+
   // surface beacons: every crater rim is RINGED in fire so the way down reads
   // from across the whole field — tall ember fangs, a warm rim light, and a
   // soft amber column rising out of the hole like heat-glow off a furnace
@@ -165,6 +250,7 @@ export function buildCave(scene) {
 
   return {
     solids: [floor, ceil],
+    colliders: portalColliders,   // arch pillars block movement (framed doorway)
     // lights swell as the player descends (they're mostly wasted on the surface)
     setUnderground(u) {
       for (const l of lights) {

@@ -12,6 +12,7 @@ export class HUD {
     this.root = root;
     this.popups = [];     // floating world-anchored numbers
     this.dmgIndicators = [];
+    this.waypoint = null;  // { pos, label } — a world-anchored objective marker
     this._build();
     this.health = 100;
     this.maxHealth = 100;
@@ -37,6 +38,7 @@ export class HUD {
       <div id="dmg-vignette"></div>
       <div id="hit-flash"></div>
       <div id="hit-dir-layer"></div>
+      <div id="waypoint"><div id="waypoint-icon">◆</div><span id="waypoint-dist"></span></div>
       <div id="crosshair">
         <div class="ch-dot"></div>
         <div class="ch line top"></div>
@@ -155,6 +157,8 @@ export class HUD {
       timewarp: q('#timewarp'),
       hitFlash: q('#hit-flash'),
       hitDirLayer: q('#hit-dir-layer'),
+      waypoint: q('#waypoint'),
+      waypointDist: q('#waypoint-dist'),
       popupLayer: q('#popup-layer'),
       combo: q('#combo'),
       comboNum: q('#combo-num'),
@@ -541,6 +545,47 @@ export class HUD {
       d.el.style.opacity = String(clamp01(d.life / (d.max || 2.0)));
       if (d.life <= 0) { d.el.remove(); this.dmgIndicators.splice(i, 1); }
     }
+
+    this._renderWaypoint(camera, w, h);
+  }
+
+  // A world-anchored objective marker (the supply crate). On-screen it sits over
+  // the target with a distance readout; off-screen (or behind you) it pins to a
+  // ring near the screen edge and points the way, so you always know where to run.
+  setWaypoint(pos) { this.waypoint = { pos }; this.el.waypoint.classList.add('show'); }
+  clearWaypoint() { this.waypoint = null; this.el.waypoint.classList.remove('show'); }
+
+  _renderWaypoint(camera, w, h) {
+    const wp = this.waypoint;
+    if (!wp) return;
+    // don't float the marker over the start / game-over / upgrade menus
+    if (this.el.overlay.classList.contains('show') || this.el.upgradeOverlay.classList.contains('show')) {
+      this.el.waypoint.classList.remove('show'); return;
+    }
+    if (!this.el.waypoint.classList.contains('show')) this.el.waypoint.classList.add('show');
+    const dist = Math.round(Math.hypot(wp.pos.x - camera.position.x, wp.pos.y - camera.position.y, wp.pos.z - camera.position.z));
+    this.el.waypointDist.textContent = dist + 'm';
+    this._tmp.copy(wp.pos).project(camera);
+    const behind = this._tmp.z > 1;
+    let nx = this._tmp.x, ny = this._tmp.y;
+    if (behind) { nx = -nx; ny = -ny; }
+    const cx = w / 2, cy = h / 2;
+    const onScreen = !behind && Math.abs(nx) <= 0.96 && Math.abs(ny) <= 0.96;
+    let x, y, edge;
+    if (onScreen) {
+      x = (nx * 0.5 + 0.5) * w; y = (-ny * 0.5 + 0.5) * h; edge = false;
+    } else {
+      // clamp the direction to an ellipse just inside the screen edge
+      const ang = Math.atan2(-ny, nx);
+      const rx = w * 0.42, ry = h * 0.4;
+      x = cx + Math.cos(ang) * rx; y = cy + Math.sin(ang) * ry; edge = true;
+    }
+    this.el.waypoint.style.transform = `translate(-50%,-50%) translate(${x}px, ${y}px)`;
+    this.el.waypoint.classList.toggle('edge', edge);
+    // point the chevron toward the target when pinned to the edge
+    const icon = this.el.waypoint.firstElementChild;
+    if (edge) { icon.textContent = '➤'; icon.style.transform = `rotate(${Math.atan2(y - cy, x - cx)}rad)`; }
+    else { icon.textContent = '◆'; icon.style.transform = 'none'; }
   }
 }
 

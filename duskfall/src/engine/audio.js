@@ -130,13 +130,42 @@ export class Audio {
   // Stereo panner that positions a sound left/right based on a -1..1 value.
   // One-shot voices connect to it; we disconnect it shortly after so dead
   // panner nodes don't accumulate on the live sfxGain graph.
-  _panned(pan = 0) {
+  // Positional destination. Pass a WORLD POSITION ({x,y,z}) for true 3D audio —
+  // an HRTF panner places it relative to the listener (the camera), so you hear
+  // enemies to your left/right, AHEAD vs BEHIND, ABOVE (divers, the canopy), and
+  // softer with distance. Pass a NUMBER for a plain stereo pan (UI / player sfx).
+  _panned(arg = 0) {
     if (!this.ready) return null; // not initialized yet; callers no-op on null dest
-    const p = this.ctx.createStereoPanner();
-    p.pan.value = clamp(pan, -1, 1);
-    p.connect(this.sfxGain);
-    setTimeout(() => { try { p.disconnect(); } catch (e) {} }, 1500);
-    return p;
+    let node;
+    if (arg && typeof arg === 'object') {
+      node = this.ctx.createPanner();
+      node.panningModel = 'HRTF';
+      node.distanceModel = 'inverse';
+      node.refDistance = 8; node.rolloffFactor = 0.85; node.maxDistance = 110;
+      if (node.positionX) { node.positionX.value = arg.x; node.positionY.value = arg.y; node.positionZ.value = arg.z; }
+      else if (node.setPosition) node.setPosition(arg.x, arg.y, arg.z);
+    } else {
+      node = this.ctx.createStereoPanner();
+      node.pan.value = clamp(arg, -1, 1);
+    }
+    node.connect(this.sfxGain);
+    setTimeout(() => { try { node.disconnect(); } catch (e) {} }, 1500);
+    return node;
+  }
+
+  // Place the audio listener at the camera each frame (position + facing + up),
+  // so the HRTF panners above resolve to real world-space direction cues.
+  setListener(px, py, pz, fx, fy, fz, ux, uy, uz) {
+    if (!this.ready) return;
+    const l = this.ctx.listener;
+    if (l.positionX) {
+      const t = this.ctx.currentTime;
+      l.positionX.setValueAtTime(px, t); l.positionY.setValueAtTime(py, t); l.positionZ.setValueAtTime(pz, t);
+      l.forwardX.setValueAtTime(fx, t); l.forwardY.setValueAtTime(fy, t); l.forwardZ.setValueAtTime(fz, t);
+      l.upX.setValueAtTime(ux, t); l.upY.setValueAtTime(uy, t); l.upZ.setValueAtTime(uz, t);
+    } else if (l.setPosition) {
+      l.setPosition(px, py, pz); l.setOrientation(fx, fy, fz, ux, uy, uz);
+    }
   }
 
   // ---- gameplay sounds --------------------------------------------------

@@ -109,6 +109,7 @@ class Game {
     this._pondWasFrozen = false;
     this._meteors = [];            // wurm-wave surface strikes [{x,z,y,t}]
     this._voids = [];              // live void orbs [{pos,t,spin}]
+    this._supply = null;          // live supply crate + beam + waypoint
     this._meteorCd = 1; this._surgeCd = 0.5;
     this._chillT = 0;              // frost-elite slow
     this._mutNight = 0; this._mutFog = 0;   // damped mutator moods
@@ -329,7 +330,7 @@ class Game {
     this.season = 0; this._stormBoost = 0; this.world.setSeason(0, 0, 0);   // back to summer
     this._pondWasFrozen = this.world.pond.frozen;
     this._meteors.length = 0; this._meteorCd = 1; this._surgeCd = 0.5;
-    this._voids.length = 0;
+    this._voids.length = 0; this._clearSupply();
     this._dashHitSet.clear(); this._dashPin = null; this._dashAge = 0;
     this.fx.trauma = 0; this.fx.hitstop = 0; this.fx.slowmo = 1;
     this._chillT = 0; this.controller.speedMult = 1;
@@ -360,6 +361,7 @@ class Game {
 
   die() {
     if (this._dashPin) this._detonatePin();
+    this._clearSupply();
     this.state = 'dead';
     this.input.exitLock();
     this.audio.gameOver();
@@ -375,14 +377,61 @@ class Game {
   hitscan(origin, dir, range) {
     this.ray.set(origin, dir);
     this.ray.far = range;
-    const targets = this.world.solids.concat(this.enemies.raycastTargets());
+    // raycast only the CHEAP meshes (enemies + props). The two ~13k-triangle
+    // heightfield planes — surface terrain and the cave floor/ceil — used to
+    // cost ~10ms EACH per ray (×12 shotgun pellets = a ~125ms hitch), so they're
+    // excluded here and hit analytically by marching groundAt below instead.
+    const targets = this.world.bulletSolids.concat(this.enemies.raycastTargets());
     const hits = this.ray.intersectObjects(targets, false);
-    if (hits.length === 0) return null;
-    const h = hits[0];
-    const enemy = h.object.userData.enemy || null;
-    let normal = null;
-    if (h.face) normal = h.face.normal.clone().transformDirection(h.object.matrixWorld).normalize();
-    return { point: h.point, normal, enemy, distance: h.distance };
+    let best = null;
+    if (hits.length) {
+      const h = hits[0];
+      let normal = null;
+      if (h.face) normal = h.face.normal.clone().transformDirection(h.object.matrixWorld).normalize();
+      best = { point: h.point, normal, enemy: h.object.userData.enemy || null, distance: h.distance };
+    }
+    const ground = this._marchGround(origin, dir, best ? best.distance : range);
+    if (ground && (!best || ground.distance < best.distance)) best = ground;
+    return best;
+  }
+
+  // Analytic ray-vs-heightfield: step along the ray sampling the ground height
+  // (terrain, or the cave floor when underground) and stop where the ray dips
+  // below it, refining with a few bisection steps. O(steps) and cheap — replaces
+  // a brute-force triangle raycast against a 13k-tri plane.
+  _marchGround(origin, dir, maxDist) {
+    const gAt = this.world.groundAt;
+    const STEP = 0.9;
+    let pAbove = origin.y - gAt(origin.x, origin.z, origin.y);
+    let t = 0;
+    for (let nt = STEP; nt <= maxDist; nt += STEP) {
+      const x = origin.x + dir.x * nt, y = origin.y + dir.y * nt, z = origin.z + dir.z * nt;
+      const above = y - gAt(x, z, y);
+      if (above <= 0 && pAbove > 0) {
+        // surface crossed between t and nt — bisect toward it
+        let lo = t, hi = nt;
+        for (let k = 0; k < 5; k++) {
+          const mid = (lo + hi) / 2;
+          const mx = origin.x + dir.x * mid, my = origin.y + dir.y * mid, mz = origin.z + dir.z * mid;
+          if (my - gAt(mx, mz, my) <= 0) hi = mid; else lo = mid;
+        }
+        const px = origin.x + dir.x * hi, py = origin.y + dir.y * hi, pz = origin.z + dir.z * hi;
+        const point = new THREE.Vector3(px, py, pz);
+        // underground, the marched surface is the cave floor/ceiling (flat), not
+        // the terrain heightfield — face the normal against the ray (up for a
+        // floor hit, down for a ceiling), so decals lie flat. Above ground, use
+        // the real terrain gradient.
+        let normal;
+        if (this.world.isUnder && this.world.isUnder(px, pz, py + (dir.y > 0 ? 0.2 : -0.2))) {
+          normal = new THREE.Vector3(0, dir.y > 0 ? -1 : 1, 0);
+        } else {
+          normal = this.world.terrain.normal ? this.world.terrain.normal(px, pz) : new THREE.Vector3(0, 1, 0);
+        }
+        return { point, normal, enemy: null, distance: hi };
+      }
+      pAbove = above; t = nt;
+    }
+    return null;
   }
 
   applyDamage(enemy, dmg, point, dir, isHead) {
@@ -494,10 +543,17 @@ class Game {
       // hold right-click for iron sights (dashing / sliding suppress it)
       this.cam.aimTarget = (this.input.isDown('aim') && !this.controller.isDashing() && !this.controller._sliding) ? 1 : 0;
       this.cam.applyView(realDt, this.controller, this.fx, this.input);
+      // spatial audio: pin the listener to the camera (head) so enemy voices
+      // localise in 3D — left/right, ahead/behind, above, and softer with range
+      const _cp = this.camera.getWorldPosition(this._alp || (this._alp = new THREE.Vector3()));
+      const _cf = this.camera.getWorldDirection(this._alf || (this._alf = new THREE.Vector3()));
+      const _cu = (this._alu || (this._alu = new THREE.Vector3())).setFromMatrixColumn(this.camera.matrixWorld, 1).normalize();
+      this.audio.setListener(_cp.x, _cp.y, _cp.z, _cf.x, _cf.y, _cf.z, _cu.x, _cu.y, _cu.z);
       this.hud.setAim(this.cam.aimT);
       this.hud.setDash(this.controller.dashCharges, this.controller.maxDashCharges, this.controller.dashRechargeRatio, this.controller.isDashing());
       this.weapons.update(realDt, this.controller, this.input);
       this._updateVoids(gdt);
+      this._updateSupply(gdt);
       this._grenadeCd = Math.max(0, this._grenadeCd - realDt);
       if (this.input.wasPressed('grenade')) this._throwGrenade();
       this.pickups.update(realDt, this.controller.pos);
@@ -607,23 +663,95 @@ class Game {
       const p = new THREE.Vector3(this.controller.pos.x + Math.cos(a) * 26, 0, this.controller.pos.z + Math.sin(a) * 26);
       this.enemies.spawnAdds(p, 5);
     } else {
-      this.hud.banner('SUPPLY DROP', 'a beacon falls — race it', '#7df9ff');
-      this.audio.perfect();
-      const a = Math.random() * Math.PI * 2, d = 14 + Math.random() * 12;
-      const x = this.controller.pos.x + Math.cos(a) * d, z = this.controller.pos.z + Math.sin(a) * d;
-      const y = this.world.terrain.height(x, z);
-      this.fx.shockwave(new THREE.Vector3(x, y + 1, z), 0x7df9ff, 8, 1.2);
-      this.fx.impactLight(new THREE.Vector3(x, y + 2, z), 0x7df9ff, 20, 1.0);
-      setTimeout(() => {
-        if (this.state !== 'playing') return;
+      this._dropSupply();
+    }
+  }
+
+  // A SUPPLY DROP you can't miss: a crate slams down somewhere on the field with
+  // a tall cyan light beam over it AND a HUD waypoint (distance + edge arrow), so
+  // you always know exactly where to run. Reach it and it cracks open, spilling
+  // ammo/health/a grenade. Persists on GAME time (survives pauses/menus) and
+  // clears itself on pickup, timeout, death, or a new run.
+  _dropSupply() {
+    this._clearSupply();
+    // land it on REACHABLE ground: inside the play radius (past it the terrain
+    // walls up), and never in open water or down a sinkhole where you can't grab it
+    const maxR = this.world.playRadius - 4;
+    let x = this.controller.pos.x, z = this.controller.pos.z;
+    for (let tries = 0; tries < 12; tries++) {
+      const a = Math.random() * Math.PI * 2, d = 16 + Math.random() * 12;
+      x = this.controller.pos.x + Math.cos(a) * d;
+      z = this.controller.pos.z + Math.sin(a) * d;
+      const dr = Math.hypot(x, z);
+      if (dr > maxR) { const k = maxR / dr; x *= k; z *= k; }
+      const gy = this.world.groundAt(x, z, 40);
+      const inCrater = this.world.inCrater && this.world.inCrater(x, z);
+      const inWater = this.world.surfaceAt && this.world.surfaceAt(x, z, gy) === 'water';
+      if (!inCrater && !inWater) break;
+    }
+    const y = this.world.groundAt(x, z, 40);
+    const grp = new THREE.Group(); grp.position.set(x, y, z);
+    // the crate: a banded wooden box
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.2, 1.5),
+      new THREE.MeshStandardMaterial({ color: 0x6b4f30, roughness: 0.85, flatShading: true }));
+    box.position.y = 0.6; box.rotation.y = Math.random() * 0.6; box.castShadow = true; grp.add(box);
+    const bandMat = new THREE.MeshStandardMaterial({ color: 0x0a0c14, emissive: 0x7df9ff, emissiveIntensity: 2.4, roughness: 0.4, flatShading: true });
+    for (const ax of [-1, 1]) {
+      const band = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.2, 0.16), bandMat);
+      band.position.set(0, 0.6, ax * 0.5); grp.add(band);
+      const band2 = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.2, 1.56), bandMat);
+      band2.position.set(ax * 0.5, 0.6, 0); grp.add(band2);
+    }
+    // a tall beam of light so it reads from across the map
+    const beamMat = new THREE.MeshBasicMaterial({ color: 0x7df9ff, transparent: true, opacity: 0.16,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.4, 40, 10, 1, true), beamMat);
+    beam.position.y = 20; beam.frustumCulled = false; grp.add(beam);
+    const light = new THREE.PointLight(0x7df9ff, 26, 22, 1.8); light.position.y = 2; grp.add(light);
+    this.scene.add(grp);
+    this.fx.shockwave(new THREE.Vector3(x, y + 0.6, z), 0x7df9ff, 8, 0.9);
+    this.fx.impactLight(new THREE.Vector3(x, y + 2, z), 0x7df9ff, 24, 0.5);
+    this.audio.perfect();
+    this.hud.banner('SUPPLY DROP', 'run to the crate — grab the loot', '#7df9ff');
+    this.hud.setWaypoint(new THREE.Vector3(x, y + 2.2, z));
+    this._supply = { x, z, y, t: 26, grp, beamMat, light, opened: false };
+  }
+
+  _updateSupply(dt) {
+    const s = this._supply;
+    if (!s) return;
+    s.t -= dt;
+    if (!s.opened) {
+      s.beamMat.opacity = 0.13 + Math.sin(this.time * 4) * 0.05;
+      s.light.intensity = 22 + Math.sin(this.time * 4) * 6;
+      const near = Math.hypot(this.controller.pos.x - s.x, this.controller.pos.z - s.z) < 4.5;
+      if (near) {
+        // crack it open: spill the loot, burst, and drop the waypoint
+        s.opened = true; s.t = Math.min(s.t, 1.4);
         for (let i = 0; i < 4; i++) {
-          const j = new THREE.Vector3(x + (Math.random() - 0.5) * 3, 0, z + (Math.random() - 0.5) * 3);
+          const j = new THREE.Vector3(s.x + (Math.random() - 0.5) * 2.4, s.y + 0.6, s.z + (Math.random() - 0.5) * 2.4);
           this.pickups.spawn(i < 2 ? 'ammo' : (i === 2 ? 'health' : 'grenade'), j);
         }
-        this.fx.shockwave(new THREE.Vector3(x, y + 0.5, z), 0xbfe8ff, 5, 0.5);
+        this.fx.shockwave(new THREE.Vector3(s.x, s.y + 0.7, s.z), 0xbfe8ff, 5, 0.5);
+        this.fx.deathBurst(new THREE.Vector3(s.x, s.y + 0.7, s.z), 0x7df9ff);
         this.audio.pickup();
-      }, 1100);
+        this.hud.clearWaypoint();
+        this.hud.banner('SUPPLIES SECURED', '', '#7df9ff');
+      }
+    } else {
+      s.beamMat.opacity = Math.max(0, s.beamMat.opacity - dt * 0.14);   // fade the beam out
+      s.light.intensity = Math.max(0, s.light.intensity - dt * 20);
     }
+    if (s.t <= 0) this._clearSupply();
+  }
+
+  _clearSupply() {
+    const s = this._supply;
+    if (!s) return;
+    this.scene.remove(s.grp);
+    s.grp.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+    this.hud.clearWaypoint();
+    this._supply = null;
   }
 
   // Boss arena hazards. THE WURM's wave rains meteors on the SURFACE (get

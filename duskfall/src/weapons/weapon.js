@@ -21,7 +21,7 @@ export const WEAPONS = {
   },
   shotgun: {
     kind: 'shotgun', name: 'SHOTGUN', auto: true, damage: 15, headMult: 1.7,
-    fireInterval: 0.42, capacity: 56, start: 32, drop: 8, finisher: 10,
+    fireInterval: 0.3, capacity: 56, start: 32, drop: 8, finisher: 10,
     recoilPitch: 0.05, recoilYaw: 0.024, pellets: 12,
     spreadBase: 0.05, spreadMove: 0.02, spreadBloom: 0.006, spreadMax: 0.11,
     range: 58, fovPunch: 4.2, shake: 0.3, tracer: 0xffcf8a, sound: 'shotgun',

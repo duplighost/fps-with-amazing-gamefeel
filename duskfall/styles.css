@@ -109,6 +109,19 @@ body { font-family: var(--font); color: #fff; user-select: none; -webkit-user-se
   filter: drop-shadow(0 0 14px rgba(255, 40, 60, 0.95));
 }
 
+/* ---------- supply waypoint marker ---------- */
+#waypoint {
+  position: absolute; left: 0; top: 0; display: none; z-index: 6;
+  flex-direction: column; align-items: center; gap: 2px; pointer-events: none;
+  color: #7df9ff; font-family: var(--mono); font-weight: 800;
+  text-shadow: 0 0 10px rgba(125, 249, 255, 0.9);
+  filter: drop-shadow(0 0 6px rgba(125, 249, 255, 0.7));
+}
+#waypoint.show { display: flex; }
+#waypoint-icon { font-size: 22px; line-height: 1; }
+#waypoint-dist { font-size: 13px; letter-spacing: 0.06em; }
+#waypoint.edge #waypoint-dist { display: none; }
+
 /* ---------- popups (floating numbers) ---------- */
 #popup-layer { position: absolute; inset: 0; }
 .popup {

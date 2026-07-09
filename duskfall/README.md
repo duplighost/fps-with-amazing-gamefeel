@@ -101,9 +101,17 @@ a photo. The whole scene is generated at load, then run through a filmic camera:
   the classic matte-painting trick), **drifting procedural clouds**, and
   **fireflies** wandering the meadow at golden hour that die back as winter
   comes. The grass **sways** in the wind (a tiny vertex-shader injection).
-- **Sinkholes ringed in fire.** Every crater mouth is circled by ember fangs, a
-  warm always-on light, and a tall amber **glow column** rising out of the hole
-  — you can spot the way underground from anywhere on the field.
+- **Sinkhole DOORWAYS.** Every descent into the underground is now a built
+  entrance, not a hole in the dirt: a heavy stone **archway** with leaning
+  pillars, a glowing keystone rune and flanking **torches** faces the arena, a
+  carved ring of kerb-stones lips the mouth, and stone **steps** lead down into
+  the dark — plus the tall amber **glow column** so you spot the way underground
+  from across the field.
+- **Rocks to bound across.** Weathered boulders and rock shelves are scattered
+  in loose routes over the meadow — ordinary geology to look at, but their
+  heights and spacing are tuned so a **jump + air-dash chains you rock-to-rock**
+  across the field, or vaults you up toward the canopy. Each is a stand-able top
+  and solid cover.
 - **Solid foliage.** Trees, bushes and rocks are watertight lumps now (the old
   per-vertex jitter tore polyhedron corners apart into floating shards full of
   holes); canopies also carry a dark inner core so they read dense from every
@@ -177,6 +185,19 @@ Game feel is the sum of a hundred small responses. The big ones here:
 - **Iron sights** — hold right-click to bring the gun up, zoom in, tighten your spread
   and steady your aim (it drops you to a walk and calms the bob). Raising sights breaks
   your run; dashing breaks your sights.
+- **A supply drop you can't miss** — the mid-wave supply event now slams a
+  **crate** onto the field under a tall cyan **light beam**, and paints a **HUD
+  waypoint** (distance readout on-screen, an arrow pinned to the edge when it's
+  off-screen or behind you) — so you always know exactly where to run. Reach it
+  and it cracks open, spilling ammo, health and a grenade.
+- **3D positional audio** — every enemy voice is placed in the world now, not
+  just panned left/right: an HRTF listener rides the camera, so you hear a growl
+  **behind** you, a raven shrieking **above**, a charge closing from the **left**,
+  and threats **fade with distance**. You can fight by ear.
+- **Snappy shooting** — the shotgun fires faster, and a nasty hitch is gone:
+  bullets used to raycast the 13k-triangle terrain mesh (×12 per shotgun blast,
+  a ~125ms freeze). Now they march the heightfield analytically and only raycast
+  props/enemies, so firing is smooth.
 - **Gunplay** — hitscan with spread "bloom" that grows while you fire and move. Every
   shot drives recoil, an FOV punch, screen shake, a muzzle flash + light, a tracer,
   spark burst and a spinning brass casing. Headshots hit harder. Carbine + shotgun.

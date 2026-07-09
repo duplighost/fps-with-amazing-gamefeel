@@ -2195,11 +2195,13 @@ export class EnemyManager {
     if (dr > b) { const k = b / dr; e.pos.x *= k; e.pos.z *= k; }
   }
 
+  // A spatial descriptor for a sound source: just the WORLD POSITION now. The
+  // audio layer feeds it to an HRTF panner against the camera-placed listener,
+  // so every enemy voice is localised in full 3D (direction, front/back, above,
+  // distance) instead of the old left/right-only stereo pan. Kept the name so
+  // all the existing `audio.x(panFor(pos), ...)` call sites need no change.
   panFor(pos) {
-    const rel = new THREE.Vector3().subVectors(pos, this.player.pos);
-    const yaw = this.player.yaw ? this.player.yaw() : 0;
-    const right = Math.cos(yaw) * rel.x - Math.sin(yaw) * rel.z;
-    return clamp(right / 16, -1, 1);
+    return { x: pos.x, y: pos.y + 0.8, z: pos.z };   // +0.8 → sound from the torso, not the feet
   }
 
   raycastTargets() {

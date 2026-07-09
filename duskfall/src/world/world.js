@@ -11,6 +11,7 @@ import { buildPlatforms } from './platforms.js';
 import { buildCave } from './cave.js';
 import { buildLandmarks } from './landmarks.js';
 import { buildTreeHouse } from './tree.js';
+import { buildOutcrops } from './outcrops.js';
 import { POND, WATER_Y, inPond, ENTRANCES, caveSDF, inCraterMouth } from './layout.js';
 import { rand, lerp, clamp01, damp } from '../engine/math.js';
 
@@ -65,10 +66,14 @@ export function buildWorld(scene, renderer) {
   const pond = buildPond(scene);
   const landmarks = buildLandmarks(scene, terrain);
   foliage.colliders.push(...landmarks.colliders);      // stones block walkers too
+  foliage.colliders.push(...cave.colliders);           // entrance arch pillars
   platforms.platforms.push(...landmarks.tops);         // lintels/arch/slab are stand-able
   const tree = buildTreeHouse(scene, terrain);
   foliage.colliders.push(...tree.colliders);           // trunk blocks (surface only)
   platforms.platforms.push(...tree.tops);              // branches/deck/crown are stand-able
+  const outcrops = buildOutcrops(scene, terrain);
+  foliage.colliders.push(...outcrops.colliders);       // boulders block + are cover
+  platforms.platforms.push(...outcrops.tops);          // ...and stand-able hop-tops
   const mountains = buildMountains(scene);
   const clouds = buildClouds(scene);
   const fireflies = buildFireflies(scene, terrain);
@@ -141,6 +146,7 @@ export function buildWorld(scene, renderer) {
     // distant scenery cools with the year
     mountains.setSeason(season, haunt);
     tree.setSeason(season, haunt);
+    outcrops.setSeason(season);
     clouds.setSeason(season, haunt);
     fireflies.setFade((1 - clamp01(season * 1.25)) * (1 - haunt * 0.4));
     // particles: pollen motes give way to snow (a boss can force the storm harder)
@@ -175,7 +181,11 @@ export function buildWorld(scene, renderer) {
     colliders: foliage.colliders,
     platforms: platforms.platforms,
     nook: tree.nook,
-    solids: [terrain.mesh, ...foliage.solids, ...platforms.solids, ...cave.solids, ...landmarks.solids, ...tree.solids],
+    solids: [terrain.mesh, ...foliage.solids, ...platforms.solids, ...cave.solids, ...landmarks.solids, ...tree.solids, ...outcrops.solids],
+    // the big heightfield planes (surface terrain + cave floor/ceil) are ~13k
+    // triangles each and murder per-ray raycast cost; bullets march them
+    // analytically via groundAt instead, so they're excluded from this list.
+    bulletSolids: [...foliage.solids, ...platforms.solids, ...landmarks.solids, ...tree.solids, ...outcrops.solids],
     sun,
     sunDir,
     playRadius: terrain.playRadius,
