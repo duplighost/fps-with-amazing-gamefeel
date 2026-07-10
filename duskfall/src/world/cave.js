@@ -173,36 +173,44 @@ export function buildCave(scene) {
       blk.rotation.y = a; blk.castShadow = true; blk.receiveShadow = true;
       group.add(blk);
     }
-    // the archway: two leaning pillars + a lintel on the centre-facing side
+    // the archway: a trilithon (two uprights + a lintel resting ON them). Both
+    // pillars rise to ONE shared top height, so the lintel sits flush across
+    // them and it reads as a real gate — not two stones with a floating block.
+    const SPAN = 2.4;                             // half the gap between uprights
+    const gate = [];
     for (const s of [-1, 1]) {
-      const bx = e.x + cx * (rimR + 0.6) + px2 * s * 2.6;
-      const bz = e.z + cz * (rimR + 0.6) + pz2 * s * 2.6;
-      const gy = terrainHeight(bx, bz), ph = 5.4;
-      const pil = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 1.0, ph, 6), portalStone);
+      gate.push({
+        x: e.x + cx * (rimR + 0.6) + px2 * s * SPAN,
+        z: e.z + cz * (rimR + 0.6) + pz2 * s * SPAN,
+      });
+    }
+    for (const p of gate) p.gy = terrainHeight(p.x, p.z);
+    const topY = Math.max(gate[0].gy, gate[1].gy) + 4.6;   // common upright height
+    for (const p of gate) {
+      const ph = topY - p.gy + 0.3;               // reach from its own ground to topY
+      const pil = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 1.15, ph, 6), portalStone);
       _chip(pil.geometry, 0.16);
-      pil.position.set(bx, gy + ph / 2 - 0.3, bz);
-      pil.rotation.z = -s * 0.12;                // lean together
+      pil.position.set(p.x, topY - ph / 2 + 0.3, p.z);   // upright, top exactly at topY
       pil.castShadow = true; pil.receiveShadow = true;
       group.add(pil);
-      portalColliders.push({ x: bx, z: bz, r: 1.1 });
-      // a torch on each pillar (bright head + a warm light, always burning)
-      const th = new THREE.Mesh(new THREE.IcosahedronGeometry(0.34, 0), torchHeadMat);
-      th.position.set(bx, gy + ph - 0.2, bz); group.add(th);
-      const tl = new THREE.PointLight(0xffb24a, 30, 16, 1.8);
-      tl.position.set(bx, gy + ph, bz);
-      tl.userData.rim = true; tl.userData.base = 30;
+      portalColliders.push({ x: p.x, z: p.z, r: 1.2 });
+      // a torch on top of each upright (bright head + a warm light, always lit)
+      const th = new THREE.Mesh(new THREE.IcosahedronGeometry(0.38, 0), torchHeadMat);
+      th.position.set(p.x, topY + 0.45, p.z); group.add(th);
+      const tl = new THREE.PointLight(0xffb24a, 32, 17, 1.8);
+      tl.position.set(p.x, topY + 0.7, p.z);
+      tl.userData.rim = true; tl.userData.base = 32;
       scene.add(tl); lights.push(tl);
     }
-    // the lintel bridging the pillars, overhead, with a glowing keystone rune
-    const lx = e.x + cx * (rimR + 0.6), lz = e.z + cz * (rimR + 0.6);
-    const lgy = terrainHeight(lx, lz);
-    const lintel = new THREE.Mesh(new THREE.BoxGeometry(6.4, 1.0, 1.4), portalDark);
+    // the lintel: a slab resting ACROSS the two upright tops, with a keystone rune
+    const lx = (gate[0].x + gate[1].x) / 2, lz = (gate[0].z + gate[1].z) / 2;
+    const lintel = new THREE.Mesh(new THREE.BoxGeometry(SPAN * 2 + 2.2, 0.9, 1.5), portalDark);
     _chip(lintel.geometry, 0.12);
-    lintel.position.set(lx, lgy + 5.0, lz);
+    lintel.position.set(lx, topY + 0.45, lz);     // bottom of the slab sits on the tops
     lintel.rotation.y = toC + Math.PI / 2;
     lintel.castShadow = true; group.add(lintel);
-    const glyph = new THREE.Mesh(new THREE.OctahedronGeometry(0.34, 0), glyphMat);
-    glyph.position.set(lx + cx * 0.75, lgy + 5.0, lz + cz * 0.75); group.add(glyph);
+    const glyph = new THREE.Mesh(new THREE.OctahedronGeometry(0.36, 0), glyphMat);
+    glyph.position.set(lx + cx * 0.8, topY + 0.45, lz + cz * 0.8); group.add(glyph);
   }
 
   // surface beacons: every crater rim is RINGED in fire so the way down reads
