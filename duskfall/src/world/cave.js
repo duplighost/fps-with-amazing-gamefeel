@@ -203,27 +203,12 @@ export function buildCave(scene) {
     lintel.castShadow = true; group.add(lintel);
     const glyph = new THREE.Mesh(new THREE.OctahedronGeometry(0.34, 0), glyphMat);
     glyph.position.set(lx + cx * 0.75, lgy + 5.0, lz + cz * 0.75); group.add(glyph);
-    // descending stone steps on the centre-facing side, down into the mouth
-    const rimTopY = terrainHeight(e.x + cx * rimR, e.z + cz * rimR);
-    for (let i = 0; i < 4; i++) {
-      const t = 0.28 + i * 0.16;
-      const sx = e.x + cx * rimR * (1 - t), sz = e.z + cz * rimR * (1 - t);
-      const sy = lerp(rimTopY, TUNNEL_FLOOR + 1, t / 0.76);
-      const step = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.4, 1.3), i % 2 ? portalStone : portalDark);
-      step.position.set(sx, sy, sz);
-      step.rotation.y = toC + Math.PI / 2;
-      step.receiveShadow = true; group.add(step);
-    }
   }
 
   // surface beacons: every crater rim is RINGED in fire so the way down reads
-  // from across the whole field — tall ember fangs, a warm rim light, and a
-  // soft amber column rising out of the hole like heat-glow off a furnace
-  const pillarMat = new THREE.MeshBasicMaterial({
-    color: 0xff9a4a, transparent: true, opacity: 0.13, blending: THREE.AdditiveBlending,
-    depthWrite: false, side: THREE.DoubleSide, fog: false,
-  });
-  const pillars = [];
+  // from across the whole field — tall ember fangs and a warm rim light. (The
+  // old giant glow column washed out the bowl from above; the archway + torches
+  // + fire ring carry the "doorway" read now.)
   for (const e of ENTRANCES) {
     for (let i = 0; i < 8; i++) {
       const a = (i / 8) * Math.PI * 2 + e.a;
@@ -236,11 +221,7 @@ export function buildCave(scene) {
       st.rotation.set(tall ? 0 : i, i * 2.1, tall ? 0.12 : 0);
       group.add(st);
     }
-    // the glow column out of the shaft
     const rimY = terrainHeight(e.x + ENTRANCE_CARVE, e.z);
-    const pil = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 4.2, 26, 10, 1, true), pillarMat.clone());
-    pil.position.set(e.x, rimY + 4, e.z);
-    group.add(pil); pillars.push(pil);
     // a warm light AT the mouth, always on — lights the bowl walls day + night
     const rl = new THREE.PointLight(0xff9a4a, 42, 26, 1.7);
     rl.position.set(e.x, rimY + 2.5, e.z);
@@ -258,10 +239,6 @@ export function buildCave(scene) {
         l.intensity = l.userData.base * (0.2 + 0.8 * u);
       }
     },
-    update(t) {
-      for (let i = 0; i < pillars.length; i++) {
-        pillars[i].material.opacity = 0.11 + Math.sin(t * 1.3 + i * 1.7) * 0.035;
-      }
-    },
+    update() {},   // (the pulsing glow columns are gone)
   };
 }
