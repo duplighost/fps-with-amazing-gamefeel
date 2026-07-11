@@ -186,6 +186,21 @@ body { font-family: var(--font); color: #fff; user-select: none; -webkit-user-se
 #grenades.empty #gren-icon { text-shadow: none; }
 #grenades.empty #gren-key { background: rgba(255,255,255,0.25); }
 
+/* tree-cache counter — banked loot waiting up in the great tree */
+#cache {
+  margin-top: 6px; font-family: var(--mono); font-weight: 800; font-size: 18px;
+  color: #7df9ff; display: none; align-items: center; justify-content: flex-end; gap: 5px;
+  text-shadow: 0 0 10px rgba(125, 249, 255, 0.7);
+}
+#cache.show { display: flex; }
+#cache-icon { font-size: 15px; }
+#cache-label {
+  font-size: 10px; font-weight: 700; letter-spacing: 1px; color: #0c0c10;
+  background: #7df9ff; border-radius: 4px; padding: 1px 5px; margin-left: 3px;
+}
+#cache.full { animation: cache-pulse 0.9s ease-in-out infinite; }
+@keyframes cache-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
+
 /* ---------- top stats ---------- */
 #hud-top { position: absolute; top: 22px; left: 50%; transform: translateX(-50%); display: flex; gap: 46px; }
 .stat { text-align: center; }

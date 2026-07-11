@@ -69,18 +69,30 @@ export class PickupManager {
     // decide by GEOGRAPHY: a drop inside the nook's catch-column funnels up into
     // the cage (if there's a free slot); underground drops never funnel (they'd
     // thread through solid rock). Everything else is a normal ground drop.
+    // GEOGRAPHY: a drop in the nook's catch column funnels up into the cache —
+    // but ONLY loot you're not there to grab. A drop right at your feet stays a
+    // normal pickup; loot from a kill you've since run from (or that fell while
+    // you were up high) banks up for later. So the cache never steals your loot
+    // mid-fight — it only rescues the loot you'd otherwise lose.
     let rising = false, slot = -1;
     if (this.nook && y > -6 && this._risingCount() < this.nook.cap) {
       const ddx = pos.x - this.nook.x, ddz = pos.z - this.nook.z;
-      if (ddx * ddx + ddz * ddz <= this.nook.catchR * this.nook.catchR) { rising = true; slot = this._lowestFreeSlot(); }
+      const inCatch = ddx * ddx + ddz * ddz <= this.nook.catchR * this.nook.catchR;
+      const pp = this._playerPos;
+      const nearYou = pp && ((pos.x - pp.x) ** 2 + (pos.z - pp.z) ** 2) < 36 && Math.abs((pos.y || 0) - pp.y) < 3.5;
+      if (inCatch && !nearYou) { rising = true; slot = this._lowestFreeSlot(); }
     }
     this.list.push({ type, group, life: rising ? STASH_LIFE : LIFETIME, phase: rand(0, Math.PI * 2), collected: false, rising, caged: false, slot });
   }
 
+  // how many pickups are banked in the cache right now (for the HUD)
+  cacheCount() { let n = 0; for (const p of this.list) if (p.caged) n++; return n; }
+
   update(dt, playerPos) {
+    this._playerPos = playerPos;   // remembered so spawn() knows if you're there to grab a drop
     for (let i = this.list.length - 1; i >= 0; i--) {
       const p = this.list[i];
-      p.life -= dt;
+      if (!p.caged) p.life -= dt;   // BANKED loot never expires — it waits for you
       const g = p.group;
       // bob + spin
       p.phase += dt * 2.4;
@@ -110,8 +122,11 @@ export class PickupManager {
       const cd = Math.hypot(cdx, cdz), cdy = Math.abs(playerPos.y - g.position.y);
       if (!p.collected && !(p.rising && !p.caged) && cd < COLLECT_R && cdy < COLLECT_DY) {
         p.collected = true;
-        if (this.onCollect) this.onCollect(p.type, g.position.clone());
         const wasFunnel = p.rising || p.caged;
+        // tell main whether this was banked loot, and whether the cache was FULL
+        // when this haul began (a full cache pays a jackpot for the climb)
+        const meta = p.caged ? { caged: true, cacheFull: this.cacheCount() >= (this.nook ? this.nook.cap : 5) } : null;
+        if (this.onCollect) this.onCollect(p.type, g.position.clone(), meta);
         this._remove(p); this.list.splice(i, 1);
         if (wasFunnel) this._repackSlots();
         continue;

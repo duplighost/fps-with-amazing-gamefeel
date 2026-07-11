@@ -69,9 +69,16 @@ a photo. The whole scene is generated at load, then run through a filmic camera:
   in a handful of instanced draw calls.
 - **THE GREAT TREE.** A giant oak towers over the middle of the map and the
   whole sky layer is its crown: spiral branch steps climb to a plank **treehouse
-  deck** holding the **loot cage** (drops from fights below still funnel up into
-  it), and the canopy above is a high perch. Nothing floats unsupported any
-  more — every platform in the sky hangs off this tree.
+  deck** holding the **loot cache**, and the canopy above is a high perch.
+  Nothing floats unsupported any more — every platform in the sky hangs off this
+  tree.
+- **THE CACHE.** Loot that drops near the tree from a kill you've since run from
+  (or that falls while you're up high) funnels up into the cache and **banks
+  there forever** — it never expires. It only ever rescues loot you *couldn't*
+  grab; a drop at your feet always stays a normal pickup, so the cache never
+  steals from a fight. A HUD counter tracks the haul; climb up to collect it for
+  a bonus, and empty a **FULL cache** for a **jackpot** — a spare grenade, a
+  heal, and a fat score pop for making the climb.
 - **THREE LAYERS.** The world is a sandwich now. **The sky**: a **canopy
   village** strung through the great tree — a loose, irregular ring of big flat
   plank **decks** (each braced by a limb from the trunk and a support post to

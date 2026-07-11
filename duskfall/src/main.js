@@ -176,7 +176,19 @@ class Game {
       this._maybeDrop(e, pos);
     };
 
-    this.pickups.onCollect = (type, pos) => {
+    this.pickups.onCollect = (type, pos, meta) => {
+      if (meta && meta.caged) {
+        // banked (cache) loot pays a bonus for the climb, and a FULL cache is a
+        // jackpot: a spare grenade, a heal, and a big score pop
+        this.score += 40; this.hud.setScore(this.score);
+        if (meta.cacheFull) {
+          if (this.grenades < this.maxGrenades) { this.grenades++; this.hud.setGrenades(this.grenades, this.maxGrenades); }
+          this.health = Math.min(this.maxHealth, this.health + 22); this.hud.setHealth(this.health, this.maxHealth);
+          this.score += 200; this.hud.setScore(this.score);
+          this.hud.banner('CACHE JACKPOT', '+200 · grenade · heal', '#7df9ff');
+          this.audio.perfect();
+        }
+      }
       if (type === 'ammo') {
         if (this.weapons.addAmmo(1)) {
           this.hud.ammoFlash();
@@ -576,6 +588,7 @@ class Game {
       this._grenadeCd = Math.max(0, this._grenadeCd - realDt);
       if (this.input.wasPressed('grenade')) this._throwGrenade();
       this.pickups.update(realDt, this.controller.pos);
+      this.hud.setCache(this.pickups.cacheCount(), this.world.nook ? this.world.nook.cap : 5);
     }
     this.fx.update(realDt);
     this.hud.update(realDt, this.camera);

@@ -62,6 +62,7 @@ export class HUD {
         <div id="ammo"><span id="ammo-mag">96</span><span id="ammo-sep">/</span><span id="ammo-reserve">160</span></div>
         <div id="reload-bar"><div id="reload-fill"></div></div>
         <div id="grenades"><span id="gren-icon">✸</span><span id="gren-num">2</span><span id="gren-key">G</span></div>
+        <div id="cache"><span id="cache-icon">⬡</span><span id="cache-num">0</span><span id="cache-label">CACHE</span></div>
       </div>
 
       <div id="hud-top">
@@ -131,6 +132,8 @@ export class HUD {
       ammoReserve: q('#ammo-reserve'),
       grenades: q('#grenades'),
       grenNum: q('#gren-num'),
+      cache: q('#cache'),
+      cacheNum: q('#cache-num'),
       upgradeOverlay: q('#upgrade-overlay'),
       upgradeCards: q('#upgrade-cards'),
       upgradeEyebrow: q('#upgrade-eyebrow'),
@@ -241,6 +244,14 @@ export class HUD {
     if (!this.el.grenNum) return;
     this.el.grenNum.textContent = n;
     this.el.grenades.classList.toggle('empty', n <= 0);
+  }
+
+  // the tree-cache counter: hidden at 0, shown with a count, pulsing when FULL
+  setCache(n, cap) {
+    if (!this.el.cache) return;
+    this.el.cacheNum.textContent = n;
+    this.el.cache.classList.toggle('show', n > 0);
+    this.el.cache.classList.toggle('full', n >= cap);
   }
 
   // brief flash of the ammo readout when a drop tops you up
