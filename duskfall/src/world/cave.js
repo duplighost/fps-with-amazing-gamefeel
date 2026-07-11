@@ -37,10 +37,16 @@ function buildSheet(scene, sampleY, isCeil) {
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), z = pos.getZ(i);
     const sdf = caveSDF(x, z);
-    // outside the region both sheets collapse and stay a meter UNDER the
-    // surface — including under the crater bowls, where collapsing to the
-    // ceiling height used to poke black shards up through the funnel walls
-    const y = sdf >= 0.4 ? Math.min(caveCeilY(x, z), terrainHeight(x, z) - 1.2) : sampleY(x, z);
+    const surf = terrainHeight(x, z);
+    // Both sheets must ALWAYS stay below the surface, or they punch up through
+    // the crater funnels as flickering shards. Outside the region the two sheets
+    // collapse together a meter under the surface (sealing the rock). Inside, use
+    // the real cave floor/ceiling but STILL clamp under the surface: the tunnel
+    // roof can't poke out of a funnel wall, and the floor can't z-fight the
+    // crater throat where the terrain funnels down onto TUNNEL_FLOOR to meet it.
+    let y;
+    if (sdf >= 0.4) y = Math.min(caveCeilY(x, z), surf - 1.2);
+    else y = Math.min(sampleY(x, z), surf - (isCeil ? 1.2 : 0.15));
     pos.setY(i, y);
     const depth = clamp01(-sdf / 8);
     col.copy(rock).lerp(rock2, ((x * 13.37 + z * 7.77) % 1 + 1) % 1 * 0.5).lerp(cold, depth * 0.4);

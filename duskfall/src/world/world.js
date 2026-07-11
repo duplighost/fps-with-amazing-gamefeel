@@ -64,6 +64,7 @@ export function buildWorld(scene, renderer) {
   const platforms = buildPlatforms(scene, terrain);
   const cave = buildCave(scene);
   const pond = buildPond(scene);
+  const waterfall = buildWaterfall(scene, terrain);
   const landmarks = buildLandmarks(scene, terrain);
   foliage.colliders.push(...landmarks.colliders);      // stones block walkers too
   foliage.colliders.push(...cave.colliders);           // entrance arch pillars
@@ -74,6 +75,7 @@ export function buildWorld(scene, renderer) {
   const outcrops = buildOutcrops(scene, terrain);
   foliage.colliders.push(...outcrops.colliders);       // boulders block + are cover
   platforms.platforms.push(...outcrops.tops);          // ...and stand-able hop-tops
+  foliage.colliders.push(waterfall.collider);          // the waterfall's rock buttress
   const mountains = buildMountains(scene);
   const clouds = buildClouds(scene);
   const fireflies = buildFireflies(scene, terrain);
@@ -147,6 +149,7 @@ export function buildWorld(scene, renderer) {
     mountains.setSeason(season, haunt);
     tree.setSeason(season, haunt);
     outcrops.setSeason(season);
+    waterfall.setSeason(season);
     clouds.setSeason(season, haunt);
     fireflies.setFade((1 - clamp01(season * 1.25)) * (1 - haunt * 0.4));
     // particles: pollen motes give way to snow (a boss can force the storm harder)
@@ -202,6 +205,7 @@ export function buildWorld(scene, renderer) {
     setStormBoost,
     update(dt, playerPos) {
       pondTime += dt; pond.update(pondTime);
+      waterfall.update(pondTime);
       clouds.update(dt);
       fireflies.update(dt, pondTime);
       cave.update(pondTime);
@@ -342,6 +346,150 @@ function buildPond(scene) {
       }
     },
     update(t) { if (!frozen) mat.emissiveIntensity = 0.3 + Math.sin(t * 1.7) * 0.08; },
+  };
+}
+
+// A procedural water sheet: soft vertical streaks + foam flecks on a translucent
+// blue gradient, tiled so it can scroll seamlessly. Two seeded variants layer up
+// for parallax depth in the falling curtain.
+function waterCurtainTexture(variant) {
+  const w = 96, h = 256;
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  const g = ctx.createLinearGradient(0, 0, 0, h);
+  g.addColorStop(0, 'rgba(236,247,255,0.92)');
+  g.addColorStop(0.12, 'rgba(206,232,246,0.72)');
+  g.addColorStop(1, 'rgba(178,214,234,0.55)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+  const R = (n) => { const t = Math.sin((n + variant * 91.3) * 12.9898) * 43758.5453; return t - Math.floor(t); };
+  for (let i = 0; i < 60; i++) {                       // wavy vertical streaks
+    const x = R(i) * w;
+    ctx.strokeStyle = `rgba(255,255,255,${0.08 + R(i + 7) * 0.5})`;
+    ctx.lineWidth = 0.5 + R(i + 3) * 2.2;
+    ctx.beginPath(); ctx.moveTo(x, 0);
+    for (let y = 0; y < h; y += 10) ctx.lineTo(x + Math.sin(y * 0.06 + i) * 1.6, y);
+    ctx.stroke();
+  }
+  for (let i = 0; i < 260; i++) {                      // foam flecks
+    ctx.fillStyle = `rgba(255,255,255,${0.15 + R(i + 100) * 0.6})`;
+    const s = 0.5 + R(i + 50) * 1.8;
+    ctx.fillRect(R(i + 200) * w, R(i + 300) * h, s, s * 2.2);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+// A waterfall cascading down a rock buttress into the pond's OUTER rim (so its
+// face turns back toward the field). Animated water curtain, a foam lip, a
+// pulsing splash ring, rising mist, and a cool glow — all icing over as winter
+// sets in, to match the freezing pond. Decorative apart from one rock collider.
+function buildWaterfall(scene, terrain) {
+  const group = new THREE.Group();
+  scene.add(group);
+  const dl = Math.hypot(POND.x, POND.z) || 1;
+  const nx = POND.x / dl, nz = POND.z / dl;            // outward from centre toward the pond
+  const baseX = POND.x + nx * (POND.r - 0.2), baseZ = POND.z + nz * (POND.r - 0.2);
+  const FALL_H = 8.5;
+  const topY = WATER_Y + FALL_H;
+  const faceYaw = Math.atan2(-nx, -nz);                // curtain normal points back at the field
+  const curtainX = baseX + nx * 0.1, curtainZ = baseZ + nz * 0.1;
+
+  // --- rock buttress the water pours down (a stack climbing the basin wall) ---
+  const rockMat = new THREE.MeshStandardMaterial({ color: 0x5c5750, roughness: 0.97, metalness: 0.02, flatShading: true });
+  const rockDark = new THREE.MeshStandardMaterial({ color: 0x433f39, roughness: 0.97, metalness: 0.02, flatShading: true });
+  const chip = (geo, amt) => {
+    const p = geo.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      const s = Math.sin(x * 12.9 + y * 78.2 + z * 37.7 + 3.17) * 43758.5;
+      const hh = (s - Math.floor(s)) - 0.5;
+      p.setXYZ(i, x + hh * amt, y + hh * amt, z + hh * amt);
+    }
+    geo.computeVertexNormals();
+  };
+  for (let i = 0; i < 7; i++) {
+    const up = i / 6;
+    const w = 5.4 - up * 1.6 + (i % 2) * 0.5, hgt = 2.2 + (i % 3) * 0.5, bk = 3.0 - up * 0.8;
+    const blk = new THREE.Mesh(new THREE.BoxGeometry(w, hgt, bk), i % 2 ? rockDark : rockMat);
+    chip(blk.geometry, 0.5);
+    const along = 0.6 + up * 2.2;
+    blk.position.set(baseX + nx * along + Math.sin(i * 2.3) * 0.5, WATER_Y - 0.6 + up * FALL_H, baseZ + nz * along + Math.cos(i * 2.3) * 0.5);
+    blk.rotation.y = faceYaw + Math.sin(i * 1.7) * 0.2;
+    blk.castShadow = true; blk.receiveShadow = true;
+    group.add(blk);
+  }
+  for (const sgn of [-1, 1]) {                          // framing boulders at the pool
+    const b = new THREE.Mesh(new THREE.DodecahedronGeometry(1.6, 0), rockMat);
+    chip(b.geometry, 0.35);
+    b.position.set(baseX + (-nz * sgn) * 2.4 + nx * 0.4, WATER_Y + 0.3, baseZ + (nx * sgn) * 2.4 + nz * 0.4);
+    b.rotation.set(sgn, sgn * 2, 0); b.castShadow = true; group.add(b);
+  }
+
+  // --- the falling water: two scrolling translucent sheets for parallax depth ---
+  const tex1 = waterCurtainTexture(1), tex2 = waterCurtainTexture(2);
+  tex1.repeat.set(1, 2.2); tex2.repeat.set(1.3, 3.0);
+  const sheetMat = (tex, op) => new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: op, depthWrite: false, side: THREE.DoubleSide });
+  const back = new THREE.Mesh(new THREE.PlaneGeometry(3.4, FALL_H), sheetMat(tex2, 0.5));
+  const front = new THREE.Mesh(new THREE.PlaneGeometry(3.0, FALL_H + 0.3), sheetMat(tex1, 0.82));
+  back.rotation.y = front.rotation.y = faceYaw;
+  back.position.set(curtainX + nx * 0.25, WATER_Y + FALL_H / 2, curtainZ + nz * 0.25);
+  front.position.set(curtainX, WATER_Y + FALL_H / 2 + 0.1, curtainZ);
+  group.add(back, front);
+
+  // --- foam lip pouring over the top ---
+  const foamMat = new THREE.MeshBasicMaterial({ color: 0xeaf6ff, transparent: true, opacity: 0.9, depthWrite: false });
+  const lip = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.5, 1.1), foamMat);
+  lip.position.set(curtainX + nx * 0.3, topY - 0.1, curtainZ + nz * 0.3);
+  lip.rotation.y = faceYaw; group.add(lip);
+
+  // --- splash ring foaming on the pool at the base ---
+  const splashMat = new THREE.MeshBasicMaterial({ color: 0xdff2ff, transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
+  const splash = new THREE.Mesh(new THREE.RingGeometry(0.8, 2.6, 26), splashMat);
+  splash.rotation.x = -Math.PI / 2; splash.position.set(curtainX, WATER_Y + 0.06, curtainZ);
+  group.add(splash);
+
+  // --- rising mist at the base ---
+  const MIST = 46;
+  const mpos = new Float32Array(MIST * 3), mseed = new Float32Array(MIST);
+  for (let i = 0; i < MIST; i++) { mseed[i] = rand(0, Math.PI * 2); mpos[i * 3] = curtainX; mpos[i * 3 + 1] = WATER_Y; mpos[i * 3 + 2] = curtainZ; }
+  const mgeo = new THREE.BufferGeometry(); mgeo.setAttribute('position', new THREE.BufferAttribute(mpos, 3));
+  const mmat = new THREE.PointsMaterial({ color: 0xdff0ff, size: 0.5, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true });
+  const mist = new THREE.Points(mgeo, mmat); mist.frustumCulled = false; group.add(mist);
+
+  const glow = new THREE.PointLight(0x9fdcff, 10, 15, 2.0);
+  glow.position.set(curtainX, WATER_Y + 2.2, curtainZ); scene.add(glow);
+
+  const CLEAR = new THREE.Color(0xffffff), ICE = new THREE.Color(0xd6ebff), _wf = new THREE.Color();
+  let winter = 0;
+  return {
+    collider: { x: baseX + nx * 1.6, z: baseZ + nz * 1.6, r: 2.6 },
+    setSeason(season) {
+      winter = clamp01((season - 0.5) / 0.3);           // freezes alongside the pond (>=0.55)
+      _wf.copy(CLEAR).lerp(ICE, winter);
+      front.material.color.copy(_wf); back.material.color.copy(_wf);
+      foamMat.color.copy(CLEAR).lerp(ICE, winter * 0.6);
+      mmat.opacity = 0.3 * (1 - winter * 0.7);
+      glow.intensity = 10 * (1 - winter * 0.5);
+    },
+    update(t) {
+      const flow = 1 - winter * 0.85;                   // nearly stills as it ices over
+      tex1.offset.y = -t * 0.62 * flow; tex2.offset.y = -t * 0.44 * flow;
+      tex1.offset.x = Math.sin(t * 0.5) * 0.02;
+      const pulse = 0.5 + Math.sin(t * 5) * 0.18 * flow;
+      splashMat.opacity = pulse * (1 - winter * 0.6);
+      splash.scale.setScalar(1 + Math.sin(t * 5) * 0.06 * flow);
+      const arr = mgeo.attributes.position.array;
+      for (let i = 0; i < MIST; i++) {
+        const rise = (t * 0.5 + mseed[i]) % 3;
+        const spread = 0.5 + rise * 0.5;
+        arr[i * 3] = curtainX + Math.cos(mseed[i] * 3 + t * 0.4) * spread;
+        arr[i * 3 + 1] = WATER_Y + rise;
+        arr[i * 3 + 2] = curtainZ + Math.sin(mseed[i] * 3 + t * 0.4) * spread;
+      }
+      mgeo.attributes.position.needsUpdate = true;
+    },
   };
 }
 

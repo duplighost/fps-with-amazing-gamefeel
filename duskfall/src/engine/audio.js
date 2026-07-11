@@ -244,14 +244,17 @@ export class Audio {
   }
 
   enemyAttack(pan = 0, voice = 1) {
-    if (!this._throttle('eatk', 0.06)) return;
+    // gap grows in slow-mo too, so a crowd swinging at you doesn't stutter
+    if (!this._throttle('eatk', 0.06 / this._timeScale)) return;
     const dest = this._panned(pan);
     this._tone({ freq: rand(160, 200) * voice, freq2: rand(300, 360) * voice, dur: rand(0.1, 0.16), vol: 0.2, type: 'triangle', dest });
     this._noiseBurst({ dur: 0.11, vol: 0.14, type: 'bandpass', freq: 850, q: 0.8, sweepTo: 1500, dest });
   }
 
   growl(pan = 0, voice = 1) {
-    if (!this._throttle('growl', 0.14)) return;
+    // idle growls space out in slow-mo too — otherwise a nearby horde drones
+    // this voice on a loop against the slowed scene even when you're not firing
+    if (!this._throttle('growl', 0.14 / this._timeScale)) return;
     const dest = this._panned(pan);
     this._tone({ freq: rand(64, 108) * voice, freq2: rand(52, 84) * voice, dur: rand(0.4, 0.62), vol: 0.1, type: 'sawtooth', dest });
     this._noiseBurst({ dur: 0.34, vol: 0.045, type: 'lowpass', freq: 360, dest });
