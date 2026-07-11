@@ -19,7 +19,12 @@ export class Audio {
     this._volume = 0.85;
     this._muted = false;
     this._lastPlay = {};   // per-key timestamps for rate-limiting repetitive sfx
+    this._timeScale = 1;   // game time factor (1 normal, ~0.32 in slow-mo)
   }
+
+  // the game feeds its current time scale each frame; hit/impact sounds space
+  // themselves out in slow-mo instead of machine-gunning against the slowed scene
+  setTimeScale(s) { this._timeScale = Math.max(0.2, s || 1); }
 
   // Rate-limit a repeating sound so bursts (e.g. carving a crowd during slow-mo)
   // don't machine-gun the same voice into an abrasive stutter. Returns false to skip.
@@ -222,14 +227,16 @@ export class Audio {
   // sound like one creature. Softer waveforms + wide randomisation keep repeated
   // hits from getting grating.
   enemyHit(pan = 0, voice = 1) {
-    if (!this._throttle('ehit', 0.045)) return;   // don't stutter on rapid multi-hits
+    // gap grows in slow-mo (÷ timeScale), so hits don't machine-gun against the
+    // slowed scene — the #1 slow-mo audio annoyance
+    if (!this._throttle('ehit', 0.06 / this._timeScale)) return;
     const dest = this._panned(pan);
     this._noiseBurst({ dur: rand(0.04, 0.07), vol: 0.2, type: 'lowpass', freq: rand(560, 820), sweepTo: 190, dest });
     this._tone({ freq: rand(140, 210) * voice, freq2: 72 * voice, dur: rand(0.06, 0.11), vol: 0.14, type: 'triangle', dest });
   }
 
   enemyDeath(pan = 0, voice = 1) {
-    if (!this._throttle('edeath', 0.06)) return;  // a dash through a crowd shouldn't machine-gun deaths
+    if (!this._throttle('edeath', 0.07 / this._timeScale)) return;  // dash/slow-mo crowd shouldn't machine-gun deaths
     const dest = this._panned(pan);
     this._tone({ freq: rand(150, 210) * voice, freq2: 46 * voice, dur: rand(0.4, 0.6), vol: 0.24, type: 'sawtooth', dest });
     this._tone({ freq: rand(84, 120) * voice, freq2: 38 * voice, dur: 0.5, vol: 0.14, type: 'triangle', dest });

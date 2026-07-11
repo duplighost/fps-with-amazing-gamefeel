@@ -34,6 +34,7 @@ const SEASON_FINAL_WAVE = 12;
 const SLOWMO_TARGET = 0.32;   // how slow time runs while engaged
 const SLOWMO_DRAIN = 4.0;     // seconds of use to empty a full meter
 const SLOWMO_REGEN = 8.0;     // seconds to refill from empty
+const SLOWMO_DAMAGE_MULT = 1.6;   // shots hit this much harder while slow-mo is engaged
 
 // grenades — few, powerful, refilled by rare drops
 const GRENADE_START = 2;
@@ -328,6 +329,7 @@ class Game {
     this.dropMods = { ammo: 1, health: 1, grenade: 1 };
     this.hud.setGrenades(this.grenades, this.maxGrenades);
     this.season = 0; this._stormBoost = 0; this.world.setSeason(0, 0, 0);   // back to summer
+    this.post.setSeason(0, 0);
     this._pondWasFrozen = this.world.pond.frozen;
     this._meteors.length = 0; this._meteorCd = 1; this._surgeCd = 0.5;
     this._voids.length = 0; this._clearSupply();
@@ -435,8 +437,12 @@ class Game {
   }
 
   applyDamage(enemy, dmg, point, dir, isHead) {
+    // SLOW-MO is offensive now: shots hit harder while you're bending time, so
+    // engaging slow-mo to line up a shot pays off (not just for dodging)
+    const slow = this._slowmoWasActive;
+    if (slow) dmg = Math.round(dmg * SLOWMO_DAMAGE_MULT);
     const killed = enemy.takeDamage(dmg, point, dir, isHead);
-    this.hud.popDamage(point, dmg, isHead, this.camera);
+    this.hud.popDamage(point, dmg, isHead, this.camera, slow);
     this.hud.hitMarker(isHead, killed);
     if (killed) this.fx.addHitstop(0.07);
     else if (isHead) { this.fx.addHitstop(0.035); this.audio.headshot(); }
@@ -495,6 +501,7 @@ class Game {
       this._stormBoost = damp(this._stormBoost, yetiActive ? 1 : 0, 1.5, realDt);
       this.world.setStormBoost(this._stormBoost);
       this.world.setSeason(this.season, haunt, Math.max(storm, this._stormBoost));
+      this.post.setSeason(this.season, haunt);
 
       // frost chill wears off
       this._chillT = Math.max(0, this._chillT - realDt);
@@ -535,6 +542,7 @@ class Game {
       // adaptive music: swell with the number of enemies bearing down, a boss, or
       // low health; cool + muffle the score as winter/haunt deepen or you descend
       const combat = clamp01(this.enemies.aliveCount() / 9 + (this.enemies.boss ? 0.4 : 0) + (this.health < 35 ? 0.25 : 0));
+      this.audio.setTimeScale(this.fx.slowmo);
       this.audio.setMusicIntensity(combat);
       this.audio.setMusicMood(Math.min(1, this.season + this.world.getUnder() * 0.55));
 
@@ -549,6 +557,17 @@ class Game {
       const _cf = this.camera.getWorldDirection(this._alf || (this._alf = new THREE.Vector3()));
       const _cu = (this._alu || (this._alu = new THREE.Vector3())).setFromMatrixColumn(this.camera.matrixWorld, 1).normalize();
       this.audio.setListener(_cp.x, _cp.y, _cp.z, _cf.x, _cf.y, _cf.z, _cu.x, _cu.y, _cu.z);
+      // god rays: project the sun to screen and fan warm shafts when we face it
+      const _sd = this.world.sunDir;
+      const facing = _cf.x * _sd.x + _cf.y * _sd.y + _cf.z * _sd.z;
+      if (facing > 0.04) {
+        const sp = (this._sunP || (this._sunP = new THREE.Vector3()));
+        sp.copy(_cp).addScaledVector(_sd, 1000).project(this.camera);
+        const gi = clamp01((facing - 0.04) / 0.45) * 0.5 * (1 - this.world.getUnder()) * (1 - this._mutNight * 0.7);
+        this.post.setSun(sp.x * 0.5 + 0.5, sp.y * 0.5 + 0.5, gi);
+      } else {
+        this.post.setSun(0.5, 1.2, 0);
+      }
       this.hud.setAim(this.cam.aimT);
       this.hud.setDash(this.controller.dashCharges, this.controller.maxDashCharges, this.controller.dashRechargeRatio, this.controller.isDashing());
       this.weapons.update(realDt, this.controller, this.input);

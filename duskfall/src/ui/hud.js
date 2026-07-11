@@ -346,9 +346,9 @@ export class HUD {
     this.dmgIndicators.push({ el, life: 2.0, max: 2.0, sourcePos: sourcePos.clone() });
   }
 
-  popDamage(worldPos, amount, isHead, camera) {
+  popDamage(worldPos, amount, isHead, camera, slow = false) {
     const el = document.createElement('div');
-    el.className = 'popup dmg' + (isHead ? ' head' : '');
+    el.className = 'popup dmg' + (isHead ? ' head' : '') + (slow ? ' slow' : '');
     el.textContent = Math.round(amount);
     this.el.popupLayer.appendChild(el);
     this.popups.push({
