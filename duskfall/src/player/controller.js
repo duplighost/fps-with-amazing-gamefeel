@@ -32,6 +32,9 @@ const JUMP_BUFFER = 0.16;
 const JUMP_CUT_GRACE = 0.11;      // short taps still get a real jump before the cut
 const DOUBLE_JUMP_CUT_GRACE = 0.16;
 const STICK = 0.42;               // snap-to-ground (small, so it never eats a jump)
+const EDGE_GRACE = 0.34;          // stand this far past a platform's rim before you drop — your
+                                  // body overhangs the ledge (like real footing) instead of the
+                                  // top vanishing the instant your CENTRE clears the edge
 const PLATFORM_GRACE = 1.7;       // island tops within this ABOVE the feet still count as ground —
                                   // big enough to stair-step along the sky-ring's undulating disc
                                   // chains (and it doubles as generous ledge-catch when landing);
@@ -300,7 +303,8 @@ export class Controller {
     let plat = null;
     for (const p of this.platforms) {
       const dx = x - p.x, dz = z - p.z;
-      if (dx * dx + dz * dz <= p.r * p.r && p.y > g && footY >= p.y - PLATFORM_GRACE) { g = p.y; plat = p; }
+      const rr = p.r + EDGE_GRACE;   // body-overhang ledge, so edges feel solid underfoot
+      if (dx * dx + dz * dz <= rr * rr && p.y > g && footY >= p.y - PLATFORM_GRACE) { g = p.y; plat = p; }
     }
     this._groundPlat = plat;
     return g;

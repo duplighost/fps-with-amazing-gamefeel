@@ -72,7 +72,10 @@ export function buildOutcrops(scene, terrain) {
     // side collider ONLY for boulders too tall to just step onto (short ones you
     // walk up via the one-way top). y-gated below the top so it never ejects you
     // while you're standing up there.
-    if (topRel > GRACE) colliders.push({ x, z, r: rTop * 0.95, yMax: topY - GRACE });
+    // side collider matches the rock's visual girth (so you bonk the stone
+    // instead of clipping into it), y-gated below the top so it never shoves
+    // you while you're standing up there
+    if (topRel > GRACE) colliders.push({ x, z, r: rTop * 1.12, yMax: topY - GRACE });
     tops.push({ x, z, y: topY, r: rTop });
     return { x, z, y: topY, r: rTop };
   }
